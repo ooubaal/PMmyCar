@@ -18,6 +18,7 @@ const state = {
     },
     parts: [], // { id, name, category, description, lastServiceDate, lastServiceMileage, dueType, dueMonths, dueIntervalMileage }
     history: [], // { id, partId, partName, date, mileage, cost, mechanic, notes, receipt }
+    mileageLog: [], // { date, mileage }
     lastUpdated: 0,
     
     // Sync States
@@ -32,6 +33,7 @@ const state = {
 // Flatpickr calendar instances
 let fpLastDateInstance = null;
 let fpHistDateInstance = null;
+let fpAddMileageDateInstance = null;
 
 // Default Demo Data
 const DEMO_DATA = {
@@ -40,6 +42,13 @@ const DEMO_DATA = {
         plate: "กข 9999 กรุงเทพฯ",
         mileage: 82400
     },
+    mileageLog: [
+        { date: "2026-01-01", mileage: 75000 },
+        { date: "2026-02-15", mileage: 77000 },
+        { date: "2026-04-01", mileage: 79200 },
+        { date: "2026-05-15", mileage: 81400 },
+        { date: "2026-06-03", mileage: 82400 }
+    ],
     parts: [
         {
             id: "part-1",
@@ -185,6 +194,7 @@ function saveStateToCache() {
         car: state.car,
         parts: state.parts,
         history: state.history,
+        mileageLog: state.mileageLog,
         lastUpdated: state.lastUpdated
     };
     store.put(dataToSave, "appData");
@@ -209,6 +219,7 @@ function loadStateFromCache() {
                 state.car = dataReq.result.car || state.car;
                 state.parts = dataReq.result.parts || state.parts;
                 state.history = dataReq.result.history || state.history;
+                state.mileageLog = dataReq.result.mileageLog || [];
                 state.lastUpdated = dataReq.result.lastUpdated || Date.now();
             }
             if (handleReq.result) {
@@ -354,6 +365,7 @@ async function pushDataToCloud() {
         car: state.car,
         parts: state.parts,
         history: state.history,
+        mileageLog: state.mileageLog,
         lastUpdated: state.lastUpdated
     }, null, 2);
 
@@ -460,6 +472,7 @@ function applyCloudData(cloudDb) {
     state.car = cloudDb.car || state.car;
     state.parts = cloudDb.parts || state.parts;
     state.history = cloudDb.history || state.history;
+    state.mileageLog = cloudDb.mileageLog || [];
     state.lastUpdated = cloudDb.lastUpdated || Date.now();
     
     saveStateToCache();
@@ -530,6 +543,7 @@ async function readFromLocalFile() {
         state.car = localDb.car || state.car;
         state.parts = localDb.parts || state.parts;
         state.history = localDb.history || state.history;
+        state.mileageLog = localDb.mileageLog || [];
         state.lastUpdated = localDb.lastUpdated || Date.now();
 
         setSyncBadge("local-file", `เชื่อมโยงไฟล์เครื่องสำเร็จ`);
@@ -558,6 +572,7 @@ async function writeToLocalFile() {
             car: state.car,
             parts: state.parts,
             history: state.history,
+            mileageLog: state.mileageLog,
             lastUpdated: state.lastUpdated
         };
         
@@ -656,12 +671,75 @@ function compressImage(file) {
 
 // --- 7. MAINTENANCE BUSINESS LOGIC (CALCULATE DUES) ---
 
+// Calculate average daily driving distance in km
+function calculateAverageDailyKm() {
+    if (!state.mileageLog || state.mileageLog.length < 2) {
+        return 30; // Fallback default value (30 km/day)
+    }
+    
+    // Sort chronologically
+    const sortedLogs = [...state.mileageLog].sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    const earliest = sortedLogs[0];
+    const latest = sortedLogs[sortedLogs.length - 1];
+    
+    const distanceDiff = latest.mileage - earliest.mileage;
+    const timeDiffMs = new Date(latest.date) - new Date(earliest.date);
+    const timeDiffDays = timeDiffMs / (1000 * 60 * 60 * 24);
+    
+    if (timeDiffDays <= 0 || distanceDiff <= 0) {
+        return 30; // Fallback if dates are identical or distance went backwards
+    }
+    
+    const avg = distanceDiff / timeDiffDays;
+    
+    // Bound the average between 2 km/day and 500 km/day to keep predictions sensible
+    return Math.min(500, Math.max(2, avg));
+}
+
+// Log a mileage point to history
+function logMileagePoint(date, mileage, silent = false) {
+    if (!state.mileageLog) state.mileageLog = [];
+    
+    // Check if record for this date already exists
+    const existingIdx = state.mileageLog.findIndex(log => log.date === date);
+    
+    if (existingIdx !== -1) {
+        // Update if the new mileage is higher or newer
+        if (mileage >= state.mileageLog[existingIdx].mileage) {
+            state.mileageLog[existingIdx].mileage = mileage;
+        }
+    } else {
+        state.mileageLog.push({ date, mileage });
+    }
+    
+    // Sort logs chronologically
+    state.mileageLog.sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    // Ensure state car mileage is updated if logged mileage is higher
+    if (mileage > state.car.mileage) {
+        state.car.mileage = mileage;
+    }
+    
+    if (!silent) {
+        updateState(() => {});
+    }
+}
+
+// Format predicted date helper
+function formatThaiDate(date) {
+    if (!date) return '';
+    return new Date(date).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
 function calculatePartStatus(part, currentMileage) {
     const today = new Date();
     today.setHours(0,0,0,0);
     
     const lastDate = new Date(part.lastServiceDate);
     lastDate.setHours(0,0,0,0);
+    
+    const avgDailyKm = calculateAverageDailyKm();
     
     let daysRemaining = Infinity;
     let timePercent = 1.0;
@@ -683,6 +761,8 @@ function calculatePartStatus(part, currentMileage) {
     let mileageRemaining = Infinity;
     let mileagePercent = 1.0;
     let nextDueMileage = null;
+    let predictedDueDate = null;
+    let predictedDays = Infinity;
     
     // 2. Mileage-based calculation
     if (part.dueType === 'mileage' || part.dueType === 'both') {
@@ -690,6 +770,17 @@ function calculatePartStatus(part, currentMileage) {
         mileageRemaining = nextDueMileage - currentMileage;
         
         mileagePercent = Math.max(0, mileageRemaining / part.dueIntervalMileage);
+        
+        // Calculate predicted date based on mileage usage rate
+        if (mileageRemaining > 0 && avgDailyKm > 0) {
+            predictedDays = Math.ceil(mileageRemaining / avgDailyKm);
+            const predDate = new Date(today);
+            predDate.setDate(predDate.getDate() + predictedDays);
+            predictedDueDate = predDate;
+        } else if (mileageRemaining <= 0) {
+            predictedDays = 0;
+            predictedDueDate = today;
+        }
     }
     
     // 3. Combined status
@@ -704,22 +795,25 @@ function calculatePartStatus(part, currentMileage) {
             explanation = `เลยกำหนดแล้ว (${Math.abs(daysRemaining)} วัน)`;
         } else if (daysRemaining <= 30 || percent <= 0.2) {
             status = 'warning';
-            explanation = `เหลืออีก ${daysRemaining} วัน`;
+            explanation = `เหลืออีก ${daysRemaining} วัน (ประมาณ ${formatThaiDate(nextDueDate)})`;
         } else {
             status = 'healthy';
-            explanation = `เหลืออีก ${daysRemaining} วัน`;
+            explanation = `เหลืออีก ${daysRemaining} วัน (ประมาณ ${formatThaiDate(nextDueDate)})`;
         }
     } else if (part.dueType === 'mileage') {
         percent = mileagePercent;
         if (mileageRemaining <= 0) {
             status = 'overdue';
             explanation = `เลยกำหนดแล้ว (${Math.abs(mileageRemaining).toLocaleString('th-TH')} กม.)`;
-        } else if (mileageRemaining <= 1000 || percent <= 0.2) {
-            status = 'warning';
-            explanation = `เหลืออีก ${mileageRemaining.toLocaleString('th-TH')} กม.`;
         } else {
-            status = 'healthy';
-            explanation = `เหลืออีก ${mileageRemaining.toLocaleString('th-TH')} กม.`;
+            const dateStr = predictedDueDate ? `คาดว่าถึง: ${formatThaiDate(predictedDueDate)}` : '';
+            if (mileageRemaining <= 1000 || percent <= 0.2) {
+                status = 'warning';
+                explanation = `เหลืออีก ${mileageRemaining.toLocaleString('th-TH')} กม. (${dateStr})`;
+            } else {
+                status = 'healthy';
+                explanation = `เหลืออีก ${mileageRemaining.toLocaleString('th-TH')} กม. (${dateStr})`;
+            }
         }
     } else { // Both
         percent = Math.min(timePercent, mileagePercent);
@@ -744,7 +838,16 @@ function calculatePartStatus(part, currentMileage) {
                 status = 'warning';
             }
             
-            explanation = `เหลือ ${daysRemaining} วัน หรือ ${mileageRemaining.toLocaleString('th-TH')} กม.`;
+            // Compare which one comes first
+            if (nextDueDate && predictedDueDate) {
+                if (nextDueDate < predictedDueDate) {
+                    explanation = `เหลือ ${daysRemaining} วัน (คาดว่าถึง ${formatThaiDate(nextDueDate)} - ถึงกำหนดก่อนระยะทาง)`;
+                } else {
+                    explanation = `เหลือ ${mileageRemaining.toLocaleString('th-TH')} กม. (คาดว่าถึง ${formatThaiDate(predictedDueDate)} - ถึงกำหนดก่อนเวลา)`;
+                }
+            } else {
+                explanation = `เหลือ ${daysRemaining} วัน หรือ ${mileageRemaining.toLocaleString('th-TH')} กม.`;
+            }
         }
     }
     
@@ -752,7 +855,7 @@ function calculatePartStatus(part, currentMileage) {
         percent: Math.min(1, Math.max(0, percent)),
         status,
         explanation,
-        nextDueDate,
+        nextDueDate: nextDueDate || predictedDueDate,
         nextDueMileage
     };
 }
@@ -787,6 +890,7 @@ function renderAll() {
     renderTracker();
     renderHistory();
     populatePartSelectDropdowns();
+    renderMileageHistory();
 }
 
 function renderHeader() {
@@ -1075,6 +1179,42 @@ function populatePartSelectDropdowns() {
     historyFilter.value = selectedHistoryFilter;
 }
 
+function renderMileageHistory() {
+    const list = document.getElementById('mileage-history-list');
+    if (!list) return;
+    list.innerHTML = '';
+    
+    const avg = calculateAverageDailyKm();
+    document.getElementById('mileage-avg-display').innerText = avg.toFixed(1);
+    
+    if (!state.mileageLog || state.mileageLog.length === 0) {
+        list.innerHTML = `<div class="empty-state" style="padding: 10px;"><p style="font-size: 0.8rem;">ไม่มีประวัติการบันทึกเลขไมล์</p></div>`;
+        return;
+    }
+    
+    // Sort chronologically desc
+    const sortedLogs = [...state.mileageLog].sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    sortedLogs.forEach(log => {
+        const dateFormatted = new Date(log.date).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+        const logHTML = `
+            <div class="detail-row" style="margin-bottom: 6px; padding: 4px 8px; background: rgba(255,255,255,0.02); border-radius: var(--border-radius-sm); font-size: 0.8rem; display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border-color);">
+                <span>📅 ${dateFormatted}</span>
+                <span style="font-weight: 600; color: var(--primary);">🚗 ${log.mileage.toLocaleString('th-TH')} กม.</span>
+                <button type="button" class="btn btn-sm btn-text" onclick="deleteMileageLog('${log.date}')" style="color: var(--danger); padding: 0; font-size: 0.75rem; min-height: auto;">ลบ</button>
+            </div>
+        `;
+        list.insertAdjacentHTML('beforeend', logHTML);
+    });
+}
+
+window.deleteMileageLog = function(date) {
+    if (!confirm("ยืนยันที่จะลบประวัติเลขไมล์ประจำวันที่ " + formatThaiDate(date) + "?")) return;
+    updateState(() => {
+        state.mileageLog = state.mileageLog.filter(log => log.date !== date);
+    });
+};
+
 // Toggle cloud buttons on/off based on login state
 function toggleCloudButtons(isLoggedIn) {
     document.getElementById('btn-cloud-login').style.display = isLoggedIn ? 'none' : 'inline-flex';
@@ -1340,6 +1480,9 @@ document.getElementById('form-history').addEventListener('submit', (e) => {
         if (mileage > state.car.mileage) {
             state.car.mileage = mileage;
         }
+
+        // Auto-log mileage point for this service date
+        logMileagePoint(date, mileage, true);
     });
 
     closeModal('modal-history');
@@ -1385,6 +1528,7 @@ document.getElementById('form-quick-mileage').addEventListener('submit', (e) => 
 
     updateState(() => {
         state.car.mileage = mileage;
+        logMileagePoint(new Date().toISOString().split('T')[0], mileage, true);
     });
     
     closeModal('modal-mileage');
@@ -1401,6 +1545,7 @@ document.getElementById('form-car-info').addEventListener('submit', (e) => {
         state.car.name = name;
         state.car.plate = plate;
         state.car.mileage = mileage;
+        logMileagePoint(new Date().toISOString().split('T')[0], mileage, true);
     });
     
     alert("บันทึกข้อมูลรถยนต์เรียบร้อยแล้ว");
@@ -1427,6 +1572,21 @@ document.getElementById('btn-select-local-file').addEventListener('click', () =>
     selectLocalFile();
 });
 
+// Settings - Add Mileage Log Form Submit
+document.getElementById('form-add-mileage-log').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const date = document.getElementById('add-mileage-date').value;
+    const mileage = parseInt(document.getElementById('add-mileage-val').value);
+    
+    if (!date || isNaN(mileage)) return;
+    
+    logMileagePoint(date, mileage);
+    
+    // Reset form inputs
+    document.getElementById('add-mileage-val').value = '';
+    if (fpAddMileageDateInstance) fpAddMileageDateInstance.setDate(new Date());
+});
+
 // Settings - Save Microsoft App Client ID
 document.getElementById('btn-save-client-id').addEventListener('click', () => {
     const val = document.getElementById('set-client-id').value.trim();
@@ -1448,6 +1608,7 @@ document.getElementById('btn-manual-export').addEventListener('click', () => {
         car: state.car,
         parts: state.parts,
         history: state.history,
+        mileageLog: state.mileageLog,
         lastUpdated: state.lastUpdated
     }, null, 2));
     
@@ -1482,6 +1643,7 @@ document.getElementById('input-manual-import-file').addEventListener('change', (
                     state.car = parsed.car;
                     state.parts = parsed.parts;
                     state.history = parsed.history;
+                    state.mileageLog = parsed.mileageLog || [];
                     state.lastUpdated = parsed.lastUpdated || Date.now();
                 });
                 alert("นำเข้าฐานข้อมูลสำเร็จ!");
@@ -1551,6 +1713,14 @@ window.addEventListener('DOMContentLoaded', async () => {
         });
 
         fpHistDateInstance = flatpickr("#hist-date", {
+            dateFormat: "Y-m-d",
+            altInput: true,
+            altFormat: "d/m/Y",
+            locale: "th",
+            defaultDate: new Date()
+        });
+
+        fpAddMileageDateInstance = flatpickr("#add-mileage-date", {
             dateFormat: "Y-m-d",
             altInput: true,
             altFormat: "d/m/Y",
