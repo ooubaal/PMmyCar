@@ -13,6 +13,10 @@
     <!-- MSAL for OneDrive Cloud Integration -->
     <script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"></script>
     
+    <!-- Flatpickr Datepicker CSS (Base + Dark Theme) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
+
     <!-- Custom Style Sheet -->
     <link rel="stylesheet" href="style.css">
 </head>
@@ -389,7 +393,7 @@
                 <div class="form-row card-inside">
                     <div class="form-group flex-1">
                         <label for="part-last-date">วันที่เปลี่ยน/จ่ายล่าสุด *</label>
-                        <input type="date" id="part-last-date" required>
+                        <input type="text" id="part-last-date" required placeholder="เลือกวันที่ (วัน/เดือน/ปี)">
                     </div>
                     <div class="form-group flex-1">
                         <label for="part-last-mileage">เลขไมล์ที่เปลี่ยนล่าสุด (กม.)</label>
@@ -453,7 +457,7 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label for="hist-date">วันที่ดำเนินการ *</label>
-                        <input type="date" id="hist-date" required>
+                        <input type="text" id="hist-date" required placeholder="เลือกวันที่ (วัน/เดือน/ปี)">
                     </div>
                     <div class="form-group">
                         <label for="hist-mileage">เลขไมล์ ณ วันที่เปลี่ยน (กม.) *</label>
@@ -541,6 +545,10 @@
             </form>
         </div>
     </div>
+
+    <!-- Flatpickr Datepicker JS & Thai Locale -->
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/th.js"></script>
 
     <!-- Core App JS -->
     <script src="app.js"></script>

@@ -29,6 +29,10 @@ const state = {
     cloudLastSynced: 0
 };
 
+// Flatpickr calendar instances
+let fpLastDateInstance = null;
+let fpHistDateInstance = null;
+
 // Default Demo Data
 const DEMO_DATA = {
     car: {
@@ -1139,7 +1143,7 @@ document.getElementById('btn-open-add-part-modal').addEventListener('click', () 
     document.getElementById('modal-part-title').innerText = "เพิ่มอะไหล่ใหม่ที่ต้องการติดตาม";
     
     // Set default dates
-    document.getElementById('part-last-date').valueAsDate = new Date();
+    if (fpLastDateInstance) fpLastDateInstance.setDate(new Date());
     document.getElementById('part-last-mileage').value = state.car.mileage;
     
     // Toggle correct inputs
@@ -1210,7 +1214,7 @@ window.openEditPart = function(id) {
     document.getElementById('part-name').value = part.name;
     document.getElementById('part-category').value = part.category;
     document.getElementById('part-description').value = part.description;
-    document.getElementById('part-last-date').value = part.lastServiceDate;
+    if (fpLastDateInstance) fpLastDateInstance.setDate(part.lastServiceDate);
     document.getElementById('part-last-mileage').value = part.lastServiceMileage;
     
     document.querySelector(`input[name="due-type"][value="${part.dueType}"]`).click();
@@ -1234,7 +1238,7 @@ window.openLogReplacement = function(partId) {
     document.getElementById('receipt-upload-placeholder').style.display = 'flex';
     document.getElementById('compression-status').style.display = 'none';
 
-    document.getElementById('hist-date').valueAsDate = new Date();
+    if (fpHistDateInstance) fpHistDateInstance.setDate(new Date());
     document.getElementById('hist-mileage').value = state.car.mileage;
     
     if (part) {
@@ -1537,6 +1541,23 @@ window.addEventListener('DOMContentLoaded', async () => {
         // Attempt to auto-grant File System Access if previously chosen
         await attemptRestoreLocalFile();
         
+        // Initialize Flatpickr calendar elements
+        fpLastDateInstance = flatpickr("#part-last-date", {
+            dateFormat: "Y-m-d",
+            altInput: true,
+            altFormat: "d/m/Y",
+            locale: "th",
+            defaultDate: new Date()
+        });
+
+        fpHistDateInstance = flatpickr("#hist-date", {
+            dateFormat: "Y-m-d",
+            altInput: true,
+            altFormat: "d/m/Y",
+            locale: "th",
+            defaultDate: new Date()
+        });
+
         // Initialize MSAL OneDrive Cloud integration
         setupMSAL();
         
