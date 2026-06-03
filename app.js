@@ -1152,7 +1152,7 @@ function renderHistory() {
                     </div>
                     <div class="timeline-meta">
                         <span>📅 ${dateFormatted}</span>
-                        <span>🚗 ${parseInt(record.mileage).toLocaleString('th-TH')} กม.</span>
+                        <span>🚗 ${record.mileage > 0 ? `${parseInt(record.mileage).toLocaleString('th-TH')} กม.` : 'ไม่ระบุไมล์'}</span>
                         <span>💰 ${costDisplay}</span>
                     </div>
                     ${record.mechanic ? `<span style="font-size:0.85rem; color:var(--text-muted);">📍 อู่/ศูนย์: ${record.mechanic}</span>` : ''}
@@ -1524,18 +1524,22 @@ document.getElementById('form-history').addEventListener('submit', (e) => {
         // UPDATE THE PART'S LAST SERVICE RECORD METRICS IMMEDIATELY!
         const partIdx = state.parts.findIndex(p => p.id === partId);
         if (partIdx !== -1) {
-            // Update mileage only if the new logged service is higher or newer than existing
             state.parts[partIdx].lastServiceDate = date;
-            state.parts[partIdx].lastServiceMileage = mileage;
+            // Only update part's last service mileage if user actually specified a value > 0
+            if (mileage > 0) {
+                state.parts[partIdx].lastServiceMileage = mileage;
+            }
         }
 
         // Auto update car overall mileage if logged service mileage is higher
-        if (mileage > state.car.mileage) {
+        if (mileage > 0 && mileage > state.car.mileage) {
             state.car.mileage = mileage;
         }
 
-        // Auto-log mileage point for this service date
-        logMileagePoint(date, mileage, true);
+        // Auto-log mileage point for this service date only if specified
+        if (mileage > 0) {
+            logMileagePoint(date, mileage, true);
+        }
     });
 
     closeModal('modal-history');
