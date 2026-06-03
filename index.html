@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PM My Car - ติดตามการบำรุงรักษารถยนต์</title>
+    
+    <!-- Google Fonts: Outfit and Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- MSAL for OneDrive Cloud Integration -->
+    <script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"></script>
+    
+    <!-- Custom Style Sheet -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar / Navigation -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <circle cx="12" cy="12" r="1"></circle>
+                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                        <path d="M2 12h20"></path>
+                    </svg>
+                </div>
+                <div class="brand-name">
+                    <h1>PM My Car</h1>
+                    <span>Maintenance Hub</span>
+                </div>
+            </div>
+            
+            <nav class="nav-menu">
+                <button class="nav-btn active" data-tab="dashboard" id="btn-tab-dashboard">
+                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                    <span>แดชบอร์ด</span>
+                </button>
+                <button class="nav-btn" data-tab="tracker" id="btn-tab-tracker">
+                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+                    <span>จัดการอะไหล่</span>
+                </button>
+                <button class="nav-btn" data-tab="history" id="btn-tab-history">
+                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span>ประวัติซ่อมบำรุง</span>
+                </button>
+                <button class="nav-btn" data-tab="settings" id="btn-tab-settings">
+                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                    <span>ตั้งค่า & ซิงก์</span>
+                </button>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="sync-badge loading" id="sync-status-badge">
+                    <span class="badge-dot"></span>
+                    <span class="badge-text" id="sync-status-text">เช็คสถานะการเชื่อมต่อ...</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Header with Car Info & Quick Mileage Update -->
+            <header class="content-header">
+                <div class="header-left">
+                    <h2 id="current-tab-title">แดชบอร์ด</h2>
+                    <p class="car-quick-display" id="car-quick-name">รถของคุณ</p>
+                </div>
+                
+                <div class="header-right">
+                    <div class="mileage-widget">
+                        <div class="mileage-info">
+                            <span class="label">เลขไมล์ปัจจุบัน (km)</span>
+                            <span class="value" id="disp-current-mileage">0</span>
+                        </div>
+                        <button class="btn-update-mileage" id="btn-quick-mileage" title="อัปเดตเลขไมล์">
+                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Notification Banner for Cloud Updates -->
+            <div class="toast-banner" id="cloud-toast" style="display: none;">
+                <div class="toast-content">
+                    <div class="toast-icon">⚡</div>
+                    <div class="toast-msg">พบข้อมูลที่ใหม่กว่าใน OneDrive ต้องการอัปเดตหน้าจอหรือไม่?</div>
+                </div>
+                <button class="btn btn-sm btn-primary" id="btn-toast-reload">อัปเดตทันที</button>
+            </div>
+
+            <!-- Tab Contents -->
+            <div class="tab-viewport">
+                
+                <!-- DASHBOARD TAB -->
+                <section class="tab-pane active" id="tab-dashboard">
+                    <!-- Status Cards Grid -->
+                    <div class="stats-grid">
+                        <div class="stat-card urgent">
+                            <div class="stat-icon">⚠️</div>
+                            <div class="stat-detail">
+                                <span class="stat-val" id="count-overdue">0</span>
+                                <span class="stat-lbl">ต้องเปลี่ยนทันที (Overdue)</span>
+                            </div>
+                        </div>
+                        <div class="stat-card warning">
+                            <div class="stat-icon">🔔</div>
+                            <div class="stat-detail">
+                                <span class="stat-val" id="count-warning">0</span>
+                                <span class="stat-lbl">ใกล้ครบกำหนด (Due Soon)</span>
+                            </div>
+                        </div>
+                        <div class="stat-card healthy">
+                            <div class="stat-icon">✅</div>
+                            <div class="stat-detail">
+                                <span class="stat-val" id="count-healthy">0</span>
+                                <span class="stat-lbl">สถานะปกติ (Healthy)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Layout: Car Status Circle Visual & Urgent Items -->
+                    <div class="dashboard-layout">
+                        <!-- Car Status Visualizer -->
+                        <div class="glass-card car-status-card">
+                            <h3>สรุปสุขภาพรถของคุณ</h3>
+                            <div class="status-gauge-container">
+                                <svg class="status-gauge" viewBox="0 0 120 120">
+                                    <circle class="gauge-bg" cx="60" cy="60" r="50"></circle>
+                                    <circle class="gauge-fill" id="gauge-health-fill" cx="60" cy="60" r="50" stroke-dasharray="314" stroke-dashoffset="314"></circle>
+                                </svg>
+                                <div class="gauge-text">
+                                    <span class="gauge-percent" id="health-percent">100%</span>
+                                    <span class="gauge-lbl">สุขภาพโดยรวม</span>
+                                </div>
+                            </div>
+                            <div class="car-summary-details">
+                                <div class="detail-row">
+                                    <span>ประกันภัยรถยนต์:</span>
+                                    <span id="summary-insurance" class="status-tag tag-healthy">ตรวจสอบข้อมูล...</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span>พรบ. และภาษี:</span>
+                                    <span id="summary-tax" class="status-tag tag-healthy">ตรวจสอบข้อมูล...</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Urgent Items List -->
+                        <div class="glass-card alert-list-card">
+                            <div class="card-header">
+                                <h3>รายการที่ต้องดูแลเร่งด่วน</h3>
+                                <button class="btn btn-sm btn-text" id="btn-goto-tracker">จัดการทั้งหมด &rarr;</button>
+                            </div>
+                            <div class="alert-list" id="urgent-items-list">
+                                <div class="empty-state">
+                                    <span class="icon">🎉</span>
+                                    <p>รถของคุณอยู่ในสภาพสมบูรณ์ ไม่มีอะไหล่ครบกำหนดเปลี่ยน!</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TRACKER TAB (Parts List) -->
+                <section class="tab-pane" id="tab-tracker">
+                    <div class="action-bar">
+                        <div class="search-box">
+                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                            <input type="text" id="tracker-search" placeholder="ค้นหาชื่ออะไหล่...">
+                        </div>
+                        <div class="filter-group">
+                            <select id="tracker-filter-category">
+                                <option value="all">ทุกหมวดหมู่</option>
+                                <option value="engine">เครื่องยนต์ & ของเหลว</option>
+                                <option value="wheels">ช่วงล่าง & ยาง</option>
+                                <option value="electrical">ไฟ & ระบบไฟฟ้า</option>
+                                <option value="documents">ประกัน & ภาษี & พรบ</option>
+                                <option value="other">หมวดหมู่อื่นๆ</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" id="btn-open-add-part-modal">
+                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            เพิ่มอะไหล่ที่ต้องการติดตาม
+                        </button>
+                    </div>
+
+                    <!-- Tracked Parts List Grid -->
+                    <div class="parts-grid" id="parts-tracker-grid">
+                        <!-- Loaded dynamically -->
+                    </div>
+                </section>
+
+                <!-- HISTORY TAB -->
+                <section class="tab-pane" id="tab-history">
+                    <div class="action-bar">
+                        <div class="search-box">
+                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                            <input type="text" id="history-search" placeholder="ค้นหาจากชื่ออะไหล่ หรือบันทึก...">
+                        </div>
+                        <div class="filter-group">
+                            <select id="history-filter-part">
+                                <option value="all">ทุกอะไหล่</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-secondary" id="btn-open-add-history-modal">
+                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            เพิ่มประวัติย้อนหลัง
+                        </button>
+                    </div>
+
+                    <!-- History Timeline List -->
+                    <div class="history-list" id="history-records-list">
+                        <!-- Loaded dynamically -->
+                    </div>
+                </section>
+
+                <!-- SETTINGS TAB & SYNC CONTROL -->
+                <section class="tab-pane" id="tab-settings">
+                    <div class="settings-grid">
+                        
+                        <!-- Car Info Setup -->
+                        <div class="glass-card settings-card">
+                            <h3>ข้อมูลรถยนต์</h3>
+                            <form id="form-car-info">
+                                <div class="form-group">
+                                    <label for="set-car-name">ยี่ห้อและรุ่นรถ</label>
+                                    <input type="text" id="set-car-name" placeholder="เช่น Honda Civic RS, Toyota Yaris">
+                                </div>
+                                <div class="form-group">
+                                    <label for="set-car-plate">ทะเบียนรถ</label>
+                                    <input type="text" id="set-car-plate" placeholder="เช่น กข 1234 กรุงเทพฯ">
+                                </div>
+                                <div class="form-group">
+                                    <label for="set-car-mileage">เลขไมล์ปัจจุบัน (กิโลเมตร)</label>
+                                    <input type="number" id="set-car-mileage" min="0" placeholder="ระบุเลขไมล์ล่าสุด">
+                                </div>
+                                <button type="submit" class="btn btn-primary w-100">บันทึกข้อมูลรถ</button>
+                            </form>
+                        </div>
+
+                        <!-- Database & Sync Operations -->
+                        <div class="glass-card settings-card">
+                            <h3>การซิงก์ข้อมูล (OneDrive Database)</h3>
+                            
+                            <!-- Offline Local File Access -->
+                            <div class="sync-section">
+                                <div class="sync-section-header">
+                                    <h4>1. ใช้งานบน PC (บันทึกตรงเข้าเครื่องผ่าน OneDrive Folder)</h4>
+                                    <span class="status-tag tag-healthy" id="local-file-status">พร้อมใช้</span>
+                                </div>
+                                <p class="desc">เชื่อมโยงแอปหน้าเว็บเข้ากับไฟล์ในเครื่องคอมพิวเตอร์ของคุณโดยตรง ไฟล์จะบันทึกอัตโนมัติลงในโฟลเดอร์ OneDrive ของคุณ</p>
+                                <button class="btn btn-secondary w-100" id="btn-select-local-file">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                    เลือกไฟล์ฐานข้อมูลในเครื่อง (pm_my_car_db.json)
+                                </button>
+                                <p class="file-path-display" id="local-file-path-display">สถานะ: ไม่ได้เชื่อมต่อไฟล์โดยตรง (ใช้ฐานข้อมูลชั่วคราวในเบราว์เซอร์)</p>
+                            </div>
+
+                            <hr class="divider">
+
+                            <!-- OneDrive Cloud Sync API -->
+                            <div class="sync-section">
+                                <div class="sync-section-header">
+                                    <h4>2. ใช้งานบนมือถือ / คลาวด์ (ซิงก์ตรงกับ OneDrive Cloud)</h4>
+                                    <span class="status-tag tag-inactive" id="cloud-sync-status">ไม่ได้เข้าสู่ระบบ</span>
+                                </div>
+                                <p class="desc">ล็อกอินด้วยบัญชี Microsoft เพื่อดึงและเซฟไฟล์ฐานข้อมูลโดยตรงจากคลาวด์ เหมาะกับการใช้งานบนมือถือเพื่อตัดสลับเซฟไฟล์เดียวกัน</p>
+                                
+                                <div class="form-group client-id-group">
+                                    <label for="set-client-id">Microsoft App Client ID (สำหรับใช้งานคลาวด์)</label>
+                                    <div class="input-with-btn">
+                                        <input type="text" id="set-client-id" placeholder="วาง Client ID ของคุณที่นี่">
+                                        <button class="btn btn-sm btn-primary" id="btn-save-client-id">บันทึก</button>
+                                    </div>
+                                    <a href="#" class="help-link" id="btn-toggle-guide">วิธีสร้าง Client ID ฟรีใน 3 นาที (คลิก)</a>
+                                </div>
+
+                                <div class="sync-actions-row">
+                                    <button class="btn btn-primary" id="btn-cloud-login" style="display:none;">เข้าสู่ระบบ Microsoft</button>
+                                    <button class="btn btn-danger" id="btn-cloud-logout" style="display:none;">ออกจากระบบ Microsoft</button>
+                                    <button class="btn btn-secondary" id="btn-cloud-pull" style="display:none;" title="ดึงไฟล์ล่าสุดจาก OneDrive Cloud">ดึงข้อมูลล่าสุด</button>
+                                    <button class="btn btn-secondary" id="btn-cloud-push" style="display:none;" title="ส่งข้อมูลปัจจุบันทับใน OneDrive Cloud">ส่งออกไฟล์</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Manual Backup & Options -->
+                        <div class="glass-card settings-card">
+                            <h3>สำรองข้อมูลแบบ Manual</h3>
+                            <p class="desc">หากไม่สะดวกเชื่อมต่อ OneDrive สามารถกดนำเข้าหรือส่งออกไฟล์ข้อมูลเป็น JSON เพื่อนำไปเปิดในเครื่องอื่นได้ทันที</p>
+                            <div class="btn-group">
+                                <button class="btn btn-secondary" id="btn-manual-export">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    ส่งออก JSON
+                                </button>
+                                <button class="btn btn-secondary" id="btn-manual-import-trigger">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                                    นำเข้า JSON
+                                </button>
+                                <input type="file" id="input-manual-import-file" style="display: none;" accept=".json">
+                            </div>
+                            
+                            <hr class="divider">
+                            
+                            <h3>ข้อมูลทดสอบ</h3>
+                            <p class="desc">สร้างข้อมูลอะไหล่จำลองและประวัติบำรุงรักษาเพื่อทดลองเล่นหน้าต่างใช้งานได้ทันที</p>
+                            <button class="btn btn-warning w-100" id="btn-load-demo-data">โหลดข้อมูลตัวอย่างสำหรับทดสอบ</button>
+                            <button class="btn btn-danger-outline w-100 mt-2" id="btn-clear-db">ล้างข้อมูลทั้งหมดในเครื่อง</button>
+                        </div>
+
+                        <!-- Guide Modal Content (Toggleable Accordion style) -->
+                        <div class="glass-card settings-card col-span-full" id="client-id-guide-card" style="display: none;">
+                            <div class="card-header">
+                                <h3>คู่มือ 3 ขั้นตอน: การสร้าง Client ID เพื่อต่อเข้ากับ OneDrive ฟรี</h3>
+                                <button class="btn btn-sm btn-text" id="btn-close-guide">ปิดคู่มือ &times;</button>
+                            </div>
+                            <div class="guide-steps">
+                                <div class="step">
+                                    <h5>ขั้นตอนที่ 1: เข้าสู่ Microsoft Azure Portal</h5>
+                                    <p>เข้าไปที่ <a href="https://portal.azure.com/" target="_blank" rel="noopener">Azure Portal</a> หรือหน้า <a href="https://entra.microsoft.com/" target="_blank" rel="noopener">Microsoft Entra admin center</a> แล้วเข้าสู่ระบบด้วยบัญชี Hotmail / Outlook / Live ส่วนตัวของคุณได้ฟรี</p>
+                                </div>
+                                <div class="step">
+                                    <h5>ขั้นตอนที่ 2: ลงทะเบียนแอปพลิเคชัน (App Registration)</h5>
+                                    <ol>
+                                        <li>ไปที่เมนู **App registrations** แล้วกดปุ่ม **+ New registration**</li>
+                                        <li>**Name**: ตั้งชื่อแอปว่า `PM My Car`</li>
+                                        <li>**Supported account types**: เลือกหัวข้อที่ 3: **"Accounts in any organizational directory (Any Microsoft Entra ID tenant - Multitenant) and personal Microsoft accounts (e.g. Skype, Xbox)"** *(สำคัญมากเพื่อให้ใช้ล็อกอินกับอีเมลส่วนตัวได้)*</li>
+                                        <li>**Redirect URI**: เลือกรูปแบบเป็น **Single-page application (SPA)** และใส่ช่อง URL เป็นที่อยู่เว็บของคุณ เช่น:
+                                            <ul>
+                                                <li>หากใช้งานผ่านเครื่องจำลอง: `http://localhost:5500` หรือ `http://localhost:8000`</li>
+                                                <li>หากใช้งานบน GitHub Pages: `https://[ชื่อคุณ].github.io/pm-my-car/`</li>
+                                                <li>*หรือสามารถเพิ่มได้หลาย URL ภายหลัง*</li>
+                                            </ul>
+                                        </li>
+                                        <li>กดปุ่ม **Register** เพื่อลงทะเบียน</li>
+                                    </ol>
+                                </div>
+                                <div class="step">
+                                    <h5>ขั้นตอนที่ 3: คัดลอก Application (client) ID</h5>
+                                    <p>เมื่อกดลงทะเบียนแล้ว คุณจะเข้าหน้า Overview ให้คัดลอกรหัส **Application (client) ID** (รหัสยาวๆ ที่ประกอบด้วยขีดหลายๆ ตัว) มาวางใส่ในช่องด้านบนของแอปนี้ และกดยอมรับการอ่าน/เขียนไฟล์ (Permissions > Files.ReadWrite) ก็จะซิงก์ OneDrive ได้โดยตรงทันทีครับ</p>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </section>
+                
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAL 1: ADD/EDIT PART TO TRACK -->
+    <div class="modal-overlay" id="modal-part">
+        <div class="modal-box glass-card">
+            <div class="modal-header">
+                <h3 id="modal-part-title">เพิ่มอะไหล่ใหม่ที่ต้องการติดตาม</h3>
+                <button class="btn-close-modal" id="btn-close-part-modal">&times;</button>
+            </div>
+            <form id="form-part">
+                <input type="hidden" id="part-id">
+                
+                <div class="form-row">
+                    <div class="form-group flex-2">
+                        <label for="part-name">ชื่ออะไหล่/รายการเช็คบำรุง *</label>
+                        <input type="text" id="part-name" required placeholder="เช่น น้ำมันเครื่อง, ยางรถยนต์, กรองแอร์, ภาษีประจำปี">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="part-category">หมวดหมู่</label>
+                        <select id="part-category">
+                            <option value="engine">เครื่องยนต์ & ของเหลว</option>
+                            <option value="wheels">ช่วงล่าง & ยาง</option>
+                            <option value="electrical">ไฟ & ระบบไฟฟ้า</option>
+                            <option value="documents">ประกัน & ภาษี & พรบ</option>
+                            <option value="other">อื่นๆ</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="part-description">รายละเอียดอะไหล่/ยี่ห้อ/สเปกที่ใช้</label>
+                    <textarea id="part-description" rows="2" placeholder="เช่น ยี่ห้อ Castrol 5W-30, ยาง Michelin PS5 225/45R17"></textarea>
+                </div>
+
+                <div class="form-row card-inside">
+                    <div class="form-group flex-1">
+                        <label for="part-last-date">วันที่เปลี่ยน/จ่ายล่าสุด *</label>
+                        <input type="date" id="part-last-date" required>
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="part-last-mileage">เลขไมล์ที่เปลี่ยนล่าสุด (กม.)</label>
+                        <input type="number" id="part-last-mileage" min="0" placeholder="ระบุเลขไมล์ ณ วันที่เปลี่ยน">
+                    </div>
+                </div>
+
+                <h4 class="section-title">ตั้งค่ากำหนดการเตือนครั้งถัดไป (Next Due Setting)</h4>
+                
+                <div class="due-type-selector">
+                    <label class="radio-label">
+                        <input type="radio" name="due-type" value="time" checked id="radio-due-time">
+                        <span>อิงตามเวลา (เช่น ทุก 6 เดือน)</span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="due-type" value="mileage" id="radio-due-mileage">
+                        <span>อิงตามระยะทาง (เช่น ทุก 10,000 กม.)</span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="due-type" value="both" id="radio-due-both">
+                        <span>ทั้งสองอย่าง (ถึงอย่างใดอย่างหนึ่งก่อน)</span>
+                    </label>
+                </div>
+
+                <div class="form-row card-inside due-inputs-box">
+                    <div class="form-group" id="due-time-input-group">
+                        <label for="part-due-months">กำหนดเปลี่ยนครั้งถัดไป (ทุกๆ กี่เดือน)</label>
+                        <input type="number" id="part-due-months" min="1" value="6" placeholder="ระบุจำนวนเดือน">
+                    </div>
+                    <div class="form-group" id="due-mileage-input-group" style="display: none;">
+                        <label for="part-due-interval-mileage">กำหนดเปลี่ยนครั้งถัดไป (ทุกๆ กี่กิโลเมตร)</label>
+                        <input type="number" id="part-due-interval-mileage" min="1" value="10000" placeholder="ระบุระยะทางเป็น กม.">
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="btn-cancel-part">ยกเลิก</button>
+                    <button type="submit" class="btn btn-primary" id="btn-save-part">บันทึกข้อมูล</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 2: LOG REPLACEMENT / ADD SERVICE HISTORY -->
+    <div class="modal-overlay" id="modal-history">
+        <div class="modal-box glass-card">
+            <div class="modal-header">
+                <h3 id="modal-history-title">บันทึกการเปลี่ยนอะไหล่/บำรุงรักษา</h3>
+                <button class="btn-close-modal" id="btn-close-history-modal">&times;</button>
+            </div>
+            <form id="form-history">
+                <input type="hidden" id="hist-id">
+                
+                <div class="form-group">
+                    <label for="hist-part-id">เลือกรายการอะไหล่ *</label>
+                    <select id="hist-part-id" required>
+                        <!-- Loaded dynamically -->
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="hist-date">วันที่ดำเนินการ *</label>
+                        <input type="date" id="hist-date" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="hist-mileage">เลขไมล์ ณ วันที่เปลี่ยน (กม.) *</label>
+                        <input type="number" id="hist-mileage" min="0" required placeholder="ระบุเลขไมล์ล่าสุด">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="hist-cost">ค่าใช้จ่ายทั้งหมด (บาท)</label>
+                        <input type="number" id="hist-cost" min="0" step="0.01" placeholder="ค่าแรง + ค่าอะไหล่">
+                    </div>
+                    <div class="form-group">
+                        <label for="hist-mechanic">สถานที่/อู่ที่เข้าใช้บริการ</label>
+                        <input type="text" id="hist-mechanic" placeholder="ชื่ออู่หรือศูนย์บริการ">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="hist-notes">บันทึกช่วยจำเพิ่มเติม / รายละเอียดใบเสร็จ</label>
+                    <textarea id="hist-notes" rows="2" placeholder="เช่น เปลี่ยนกรองน้ำมันเครื่องยี่ห้อซากุระด้วย"></textarea>
+                </div>
+
+                <!-- Receipt Camera / File Upload with canvas compression -->
+                <div class="form-group">
+                    <label>อัปโหลด/ถ่ายรูปใบเสร็จหลักฐาน (บันทึกเป็นขนาด HD ประหยัดพื้นที่)</label>
+                    <div class="receipt-upload-area" id="receipt-drop-zone">
+                        <input type="file" id="hist-receipt-file" accept="image/*" capture="environment" style="display: none;">
+                        <div class="upload-placeholder" id="receipt-upload-placeholder">
+                            <span class="icon">📸</span>
+                            <span class="text">คลิกเพื่อ ถ่ายภาพ หรือ เลือกรูปจากอัลบั้ม</span>
+                            <span class="subtext">ไฟล์รูปภาพจะถูกบีบอัดเป็นขนาด HD อัตโนมัติ (อ่านตัวอักษรได้ชัดเจน)</span>
+                        </div>
+                        <div class="receipt-preview-container" id="receipt-preview-container" style="display: none;">
+                            <img src="" id="receipt-preview-img" alt="Receipt Preview">
+                            <button type="button" class="btn-remove-image" id="btn-remove-receipt" title="ลบภาพ">&times;</button>
+                        </div>
+                    </div>
+                    <div class="compression-status-bar" id="compression-status" style="display: none;">
+                        <span class="spinner">⏳</span> กำลังบีบอัดรูปภาพให้เหมาะสม...
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="btn-cancel-history">ยกเลิก</button>
+                    <button type="submit" class="btn btn-primary" id="btn-save-history">บันทึกประวัติการเปลี่ยน</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 3: VIEW COMPRESSED RECEIPT DETAILED (ZOOM IN) -->
+    <div class="modal-overlay" id="modal-receipt-view">
+        <div class="modal-box glass-card receipt-zoom-box">
+            <div class="modal-header">
+                <h3>รูปใบเสร็จชำระเงิน</h3>
+                <button class="btn-close-modal" id="btn-close-receipt-zoom">&times;</button>
+            </div>
+            <div class="zoom-image-container">
+                <img src="" id="receipt-zoom-img" alt="Zoomed Receipt">
+            </div>
+            <div class="modal-footer justify-center">
+                <button class="btn btn-secondary" id="btn-close-receipt-zoom-footer">ปิดหน้าต่าง</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 4: MILEAGE QUICK UPDATE -->
+    <div class="modal-overlay" id="modal-mileage">
+        <div class="modal-box glass-card modal-sm">
+            <div class="modal-header">
+                <h3>อัปเดตเลขไมล์ปัจจุบัน</h3>
+                <button class="btn-close-modal" id="btn-close-mileage-modal">&times;</button>
+            </div>
+            <form id="form-quick-mileage">
+                <div class="form-group">
+                    <label for="quick-mileage-val">เลขไมล์ล่าสุดของรถวันนี้ (กม.) *</label>
+                    <input type="number" id="quick-mileage-val" required min="0" placeholder="ระบุตัวเลขปัจจุบัน">
+                    <p class="desc" style="margin-top: 8px;">เลขไมล์ที่เปลี่ยนจะมีผลกับอะไหล่ที่กำหนดรอบตรวจแบบอิงระยะทาง</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="btn-cancel-mileage">ยกเลิก</button>
+                    <button type="submit" class="btn btn-primary">บันทึกเลขไมล์</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Core App JS -->
+    <script src="app.js"></script>
+</body>
+</html>
