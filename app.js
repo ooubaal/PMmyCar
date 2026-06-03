@@ -440,10 +440,11 @@ async function syncWithCloudOneDrive(silent = false) {
             
             // Compare timestamps
             if (cloudDb.lastUpdated && cloudDb.lastUpdated > state.lastUpdated) {
-                if (silent) {
-                    // Show a toast banner instead of intrusive confirm dialog
+                if (silent && state.lastUpdated > 0) {
+                    // Show a toast banner instead of intrusive confirm dialog if we have existing local data
                     document.getElementById('cloud-toast').style.display = 'flex';
                 } else {
+                    // Automatically load if local state is empty/new
                     applyCloudData(cloudDb);
                 }
             } else if (cloudDb.lastUpdated && cloudDb.lastUpdated < state.lastUpdated && !silent) {
@@ -1675,7 +1676,8 @@ document.getElementById('btn-clear-db').addEventListener('click', () => {
             state.car = { name: "รถของฉัน", plate: "", mileage: 0 };
             state.parts = [];
             state.history = [];
-            state.lastUpdated = Date.now();
+            state.mileageLog = [];
+            state.lastUpdated = 0;
         });
         alert("ล้างข้อมูลระบบเสร็จสิ้น");
     }
@@ -1692,12 +1694,13 @@ window.addEventListener('DOMContentLoaded', async () => {
         // Try to load cached data
         const cacheLoaded = await loadStateFromCache();
         
-        if (!cacheLoaded || state.parts.length === 0) {
+        if (!cacheLoaded) {
             // Default initial state if completely empty
             state.car = { name: "รถของฉัน", plate: "", mileage: 0 };
             state.parts = [];
             state.history = [];
-            state.lastUpdated = Date.now();
+            state.mileageLog = [];
+            state.lastUpdated = 0;
         }
         
         // Attempt to auto-grant File System Access if previously chosen
