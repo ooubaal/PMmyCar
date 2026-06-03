@@ -1145,7 +1145,10 @@ function renderHistory() {
                 <div class="timeline-main-info">
                     <div class="timeline-header">
                         <h4 class="timeline-title">${record.partName}</h4>
-                        <button class="btn btn-sm btn-text" onclick="deleteHistoryRecord('${record.id}')" style="color:var(--danger); padding:0;">ลบประวัติ</button>
+                        <div style="display: flex; gap: 12px;">
+                            <button type="button" class="btn btn-sm btn-text" onclick="openEditHistory('${record.id}')" style="color:var(--primary); padding:0; min-height: auto;">แก้ไข</button>
+                            <button type="button" class="btn btn-sm btn-text" onclick="deleteHistoryRecord('${record.id}')" style="color:var(--danger); padding:0; min-height: auto;">ลบประวัติ</button>
+                        </div>
                     </div>
                     <div class="timeline-meta">
                         <span>📅 ${dateFormatted}</span>
@@ -1179,6 +1182,37 @@ function populatePartSelectDropdowns() {
 
     historyFilter.value = selectedHistoryFilter;
 }
+
+window.openEditHistory = function(id) {
+    const record = state.history.find(h => h.id === id);
+    if (!record) return;
+    
+    document.getElementById('form-history').reset();
+    document.getElementById('hist-id').value = record.id;
+    document.getElementById('hist-part-id').value = record.partId;
+    
+    if (fpHistDateInstance) fpHistDateInstance.setDate(record.date);
+    document.getElementById('hist-mileage').value = record.mileage;
+    document.getElementById('hist-cost').value = record.cost || '';
+    document.getElementById('hist-mechanic').value = record.mechanic || '';
+    document.getElementById('hist-notes').value = record.notes || '';
+    
+    currentSelectedReceiptBase64 = record.receipt || "";
+    
+    // Set up receipt preview
+    if (record.receipt) {
+        document.getElementById('receipt-preview-img').src = record.receipt;
+        document.getElementById('receipt-preview-container').style.display = 'flex';
+        document.getElementById('receipt-upload-placeholder').style.display = 'none';
+    } else {
+        document.getElementById('receipt-preview-container').style.display = 'none';
+        document.getElementById('receipt-upload-placeholder').style.display = 'flex';
+    }
+    document.getElementById('compression-status').style.display = 'none';
+    
+    document.getElementById('modal-history-title').innerText = "แก้ไขประวัติการบำรุงรักษา";
+    openModal('modal-history');
+};
 
 function renderMileageHistory() {
     const list = document.getElementById('mileage-history-list');
@@ -1440,6 +1474,7 @@ document.getElementById('btn-remove-receipt').addEventListener('click', (e) => {
 document.getElementById('form-history').addEventListener('submit', (e) => {
     e.preventDefault();
     
+    const id = document.getElementById('hist-id').value;
     const partId = document.getElementById('hist-part-id').value;
     const date = document.getElementById('hist-date').value;
     const mileage = parseInt(document.getElementById('hist-mileage').value) || 0;
@@ -1454,20 +1489,37 @@ document.getElementById('form-history').addEventListener('submit', (e) => {
     }
 
     updateState(() => {
-        const newHistId = 'hist-' + Math.random().toString(36).substr(2, 9);
-        
-        // Add historical log
-        state.history.push({
-            id: newHistId,
-            partId,
-            partName: part.name,
-            date,
-            mileage,
-            cost,
-            mechanic,
-            notes,
-            receipt: currentSelectedReceiptBase64
-        });
+        if (id) {
+            // Edit existing history record
+            const idx = state.history.findIndex(h => h.id === id);
+            if (idx !== -1) {
+                state.history[idx] = {
+                    id,
+                    partId,
+                    partName: part.name,
+                    date,
+                    mileage,
+                    cost,
+                    mechanic,
+                    notes,
+                    receipt: currentSelectedReceiptBase64
+                };
+            }
+        } else {
+            // Add new history record
+            const newHistId = 'hist-' + Math.random().toString(36).substr(2, 9);
+            state.history.push({
+                id: newHistId,
+                partId,
+                partName: part.name,
+                date,
+                mileage,
+                cost,
+                mechanic,
+                notes,
+                receipt: currentSelectedReceiptBase64
+            });
+        }
 
         // UPDATE THE PART'S LAST SERVICE RECORD METRICS IMMEDIATELY!
         const partIdx = state.parts.findIndex(p => p.id === partId);
