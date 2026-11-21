@@ -682,6 +682,130 @@
         </div>
     </div>
 
+    <!-- MODAL 2.8: INSPECT PART & KEEP USING (ตรวจสอบแล้วยังสภาพดี / ขยายเวลาการใช้งาน) -->
+    <div class="modal-overlay" id="modal-inspect-part">
+        <div class="modal-box glass-card" style="max-width: 650px;">
+            <div class="modal-header">
+                <div>
+                    <h3 id="inspect-modal-title">🔍 บันทึกผลการตรวจสภาพ (ยังใช้งานได้ดี)</h3>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
+                        ตรวจเช็คแล้วยังไม่จำเป็นต้องเปลี่ยน สามารถใช้งานต่อได้ พร้อมทบทวนหรือปรับลดรอบเตือนครั้งถัดไป
+                    </p>
+                </div>
+                <button type="button" class="btn-close-modal" id="btn-close-inspect-modal">&times;</button>
+            </div>
+            
+            <form id="form-inspect-part">
+                <input type="hidden" id="inspect-part-id">
+                
+                <!-- Part Banner / Status -->
+                <div style="background: rgba(0, 242, 254, 0.05); border: 1px solid rgba(0, 242, 254, 0.2); border-radius: var(--border-radius-md); padding: 12px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                    <div>
+                        <span style="font-size: 0.75rem; color: var(--primary); font-weight: 600; text-transform: uppercase;">รายการอะไหล่ที่ตรวจสอบ</span>
+                        <h4 id="disp-inspect-part-name" style="font-size: 1.1rem; font-weight: 700; margin: 2px 0 0 0;">-</h4>
+                    </div>
+                    <div style="text-align: right;">
+                        <span id="disp-inspect-part-current-status" class="status-tag tag-warning">-</span>
+                    </div>
+                </div>
+
+                <!-- Inspection Date & Mileage -->
+                <div class="form-row card-inside">
+                    <div class="form-group flex-1">
+                        <label for="inspect-date">วันที่ตรวจสอบสภาพ *</label>
+                        <input type="text" id="inspect-date" required placeholder="เลือกวันที่ตรวจสภาพ">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="inspect-mileage">เลขไมล์ ณ วันที่ตรวจ (กม.) *</label>
+                        <input type="number" id="inspect-mileage" min="0" required placeholder="เช่น 106242">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group flex-2">
+                        <label for="inspect-notes">บันทึกผลการตรวจสภาพ / ข้อสังเกต</label>
+                        <input type="text" id="inspect-notes" placeholder="เช่น เป่าฝุ่นทำความสะอาดยังสะอาดดี, ผ้าเบรกเหลือเกิน 5 มม. ใช้ต่อได้">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="inspect-cost">ค่าบริการตรวจเช็ค (บาท)</label>
+                        <input type="number" id="inspect-cost" min="0" step="any" value="0" placeholder="0">
+                    </div>
+                </div>
+
+                <!-- Next Due Setting Section -->
+                <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+                        <div>
+                            <h4 class="section-title" style="margin-bottom: 2px;">ตั้งค่ากำหนดการเตือนครั้งถัดไป (Next Due Setting)</h4>
+                            <span style="font-size: 0.78rem; color: var(--text-muted);">เนื่องจากไม่ได้เปลี่ยนใหม่ สามารถลดความถี่ลงเพื่อตรวจดูอย่างใกล้ชิด</span>
+                        </div>
+                        <div style="display: flex; gap: 6px;">
+                            <button type="button" class="btn btn-xs btn-outline-cyan" id="btn-inspect-keep-original" title="คืนค่ารอบเดิมของอะไหล่นี้">
+                                🔄 ใช้รอบเดิม
+                            </button>
+                            <button type="button" class="btn btn-xs btn-outline-warning" id="btn-inspect-halve-interval" title="ลดรอบเวลา/ระยะทางลง 50% เพื่อให้เตือนตรวจเช็คเร็วขึ้น">
+                                ⚡ ลดรอบลง 50% (ตรวจใกล้ชิด)
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="due-type-selector">
+                        <label class="radio-label">
+                            <input type="radio" name="inspect-due-type" value="time" id="radio-inspect-due-time">
+                            <span>⏱️ ตามรอบเวลา<br><small style="color:var(--text-muted);">(ระบุจำนวนเดือน)</small></span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="inspect-due-type" value="mileage" id="radio-inspect-due-mileage">
+                            <span>🚗 ตามระยะทาง<br><small style="color:var(--text-muted);">(ระบุกิโลเมตร)</small></span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="inspect-due-type" value="both" id="radio-inspect-due-both">
+                            <span>⚡ ทั้งเวลา & ระยะทาง<br><small style="color:var(--text-muted);">(ถึงอย่างใดอย่างหนึ่งก่อน)</small></span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="inspect-due-type" value="target_date" id="radio-inspect-due-target-date">
+                            <span>📅 วันที่เป้าหมาย<br><small style="color:var(--text-muted);">(เช่น วันสิ้นสุดการใช้งาน)</small></span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="inspect-due-type" value="target_mileage" id="radio-inspect-due-target-mileage">
+                            <span>🎯 เลขไมล์เป้าหมาย<br><small style="color:var(--text-muted);">(เช่น เตือนที่ไมล์เป้าหมาย)</small></span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="inspect-due-type" value="target_both" id="radio-inspect-due-target-both">
+                            <span>🎯📅 ทั้งไมล์ & วันที่<br><small style="color:var(--text-muted);">(ถึงอย่างใดอย่างหนึ่งก่อน)</small></span>
+                        </label>
+                    </div>
+
+                    <div class="form-row card-inside due-inputs-box">
+                        <div class="form-group flex-1" id="inspect-due-time-group">
+                            <label for="inspect-due-months">กำหนดตรวจสอบครั้งถัดไป (ทุกๆ กี่เดือน)</label>
+                            <input type="number" id="inspect-due-months" min="1" placeholder="ระบุจำนวนเดือน">
+                        </div>
+                        <div class="form-group flex-1" id="inspect-due-mileage-group" style="display: none;">
+                            <label for="inspect-due-interval-mileage">กำหนดตรวจสอบครั้งถัดไป (ทุกๆ กี่ กม.)</label>
+                            <input type="number" id="inspect-due-interval-mileage" min="1" placeholder="ระบุระยะทางเป็น กม.">
+                        </div>
+                        <div class="form-group flex-1" id="inspect-due-target-date-group" style="display: none;">
+                            <label for="inspect-target-date">วันที่เป้าหมายครั้งถัดไป *</label>
+                            <input type="text" id="inspect-target-date" placeholder="เลือกวันที่เป้าหมาย (วัน/เดือน/ปี)">
+                        </div>
+                        <div class="form-group flex-1" id="inspect-due-target-mileage-group" style="display: none;">
+                            <label for="inspect-target-mileage">เลขไมล์เป้าหมายครั้งถัดไป (กม.) *</label>
+                            <input type="number" id="inspect-target-mileage" min="0" placeholder="ระบุเลขไมล์เป้าหมาย เช่น 110000">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer" style="margin-top: 20px;">
+                    <button type="button" class="btn btn-secondary" id="btn-cancel-inspect">ยกเลิก</button>
+                    <button type="submit" class="btn btn-primary" style="flex-grow: 1;">
+                        💾 บันทึกผลการตรวจสภาพ & อัปเดตรอบเตือน
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- MODAL 3: UNIVERSAL DOCUMENT / RECEIPT / PDF VIEWER -->
     <div class="modal-overlay" id="modal-receipt-view">
         <div class="modal-box glass-card receipt-zoom-box">

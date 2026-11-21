@@ -881,6 +881,36 @@ a:hover {
     border-radius: var(--border-radius-sm);
 }
 
+.btn-xs {
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    border-radius: var(--border-radius-sm);
+}
+
+.btn-outline-cyan {
+    background: transparent;
+    border: 1px solid var(--primary);
+    color: var(--primary);
+}
+
+.btn-outline-cyan:hover {
+    background: rgba(0, 242, 254, 0.15);
+    box-shadow: 0 0 10px rgba(0, 242, 254, 0.25);
+    color: var(--text-main);
+}
+
+.btn-outline-warning {
+    background: transparent;
+    border: 1px solid var(--warning);
+    color: var(--warning);
+}
+
+.btn-outline-warning:hover {
+    background: rgba(245, 158, 11, 0.15);
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.25);
+    color: var(--text-main);
+}
+
 .btn-group {
     display: flex;
     gap: 8px;

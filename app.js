@@ -35,6 +35,9 @@ let fpLastDateInstance = null;
 let fpTargetDateInstance = null;
 let fpHistDateInstance = null;
 let fpAddMileageDateInstance = null;
+let fpInspectDateInstance = null;
+let fpInspectTargetDateInstance = null;
+let inspectCurrentPart = null;
 
 // Default Demo Data
 const DEMO_DATA = {
@@ -1519,7 +1522,10 @@ function renderDashboard() {
                     </div>
                     <div class="item-right">
                         <span class="status-tag ${urgencyClass}">${analysis.status === 'overdue' ? 'เลยกำหนด' : 'เตือน'}</span>
-                        <button class="btn btn-sm btn-primary mt-2" onclick="openLogReplacement('${part.id}')">เปลี่ยนแล้ว</button>
+                        <div style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; justify-content: flex-end;">
+                            <button type="button" class="btn btn-xs btn-outline-cyan" onclick="openInspectPart('${part.id}')" title="ตรวจสอบสภาพแล้วยังใช้งานได้ดี ใช้งานต่อพร้อมตั้งค่ารอบเตือนใหม่">🔍 สภาพยังดี</button>
+                            <button type="button" class="btn btn-xs btn-primary" onclick="openLogReplacement('${part.id}')" title="บันทึกการเปลี่ยนอะไหล่ใหม่">เปลี่ยนแล้ว</button>
+                        </div>
                     </div>
                 </div>
             `;
@@ -1695,6 +1701,11 @@ function renderTracker() {
                     <button type="button" class="btn btn-sm btn-secondary" onclick="openEditPart('${part.id}')" title="แก้ไขสเปกหรือรอบบำรุงรักษา">
                         แก้ไขสเปก
                     </button>
+                    ${calc.status !== 'healthy' ? `
+                        <button type="button" class="btn btn-sm btn-outline-warning" onclick="openInspectPart('${part.id}')" title="ตรวจสอบสภาพแล้วยังใช้งานได้ดี ใช้งานต่อพร้อมตั้งค่ารอบเตือนใหม่">
+                            🔍 สภาพยังดี
+                        </button>
+                    ` : ''}
                     <button type="button" class="btn btn-sm btn-primary" onclick="openLogReplacement('${part.id}')" style="flex-grow:1;" title="บันทึกการเปลี่ยนอะไหล่">
                         บันทึกการเปลี่ยน
                     </button>
@@ -2362,6 +2373,171 @@ if (btnPartHistViewAll) {
             filterDropdown.value = targetId;
         }
         renderHistory();
+    });
+}
+
+// --- INSPECT PART & KEEP USING (สภาพยังดี / ขยายเวลาใช้งาน) CONTROLS ---
+window.openInspectPart = function(partId) {
+    const part = state.parts.find(p => p.id === partId);
+    if (!part) return;
+    
+    inspectCurrentPart = part;
+    
+    document.getElementById('inspect-part-id').value = part.id;
+    document.getElementById('disp-inspect-part-name').innerText = part.name;
+    
+    const calc = calculatePartStatus(part, state.car.mileage);
+    const statusBadge = document.getElementById('disp-inspect-part-current-status');
+    if (statusBadge) {
+        statusBadge.className = `status-tag tag-${calc.status}`;
+        statusBadge.innerText = calc.status === 'overdue' ? 'เลยกำหนดแล้ว' : (calc.status === 'warning' ? 'ใกล้ถึงกำหนด' : 'ปกติ');
+    }
+    
+    if (fpInspectDateInstance) fpInspectDateInstance.setDate(new Date());
+    document.getElementById('inspect-mileage').value = state.car.mileage;
+    document.getElementById('inspect-notes').value = '';
+    document.getElementById('inspect-cost').value = '0';
+    
+    // Populate with current part settings as initial baseline
+    populateInspectDueSettings(part);
+    
+    openModal('modal-inspect-part');
+};
+
+function populateInspectDueSettings(part) {
+    const dueType = part.dueType || 'both';
+    const radio = document.querySelector(`input[name="inspect-due-type"][value="${dueType}"]`) || document.getElementById('radio-inspect-due-both');
+    if (radio) {
+        radio.checked = true;
+        updateInspectDueVisibility(radio.value);
+    }
+    
+    document.getElementById('inspect-due-months').value = (part.dueMonths !== undefined && part.dueMonths !== null) ? part.dueMonths : 6;
+    document.getElementById('inspect-due-interval-mileage').value = (part.dueIntervalMileage !== undefined && part.dueIntervalMileage !== null) ? part.dueIntervalMileage : 10000;
+    if (fpInspectTargetDateInstance) fpInspectTargetDateInstance.setDate(part.targetDate || '');
+    document.getElementById('inspect-target-mileage').value = (part.targetMileage !== undefined && part.targetMileage !== null && part.targetMileage !== 0) ? part.targetMileage : '';
+}
+
+function updateInspectDueVisibility(val) {
+    const timeBox = document.getElementById('inspect-due-time-group');
+    const mileageBox = document.getElementById('inspect-due-mileage-group');
+    const targetDateBox = document.getElementById('inspect-due-target-date-group');
+    const targetMileageBox = document.getElementById('inspect-due-target-mileage-group');
+    
+    if (timeBox) timeBox.style.display = (val === 'time' || val === 'both') ? 'block' : 'none';
+    if (mileageBox) mileageBox.style.display = (val === 'mileage' || val === 'both') ? 'block' : 'none';
+    if (targetDateBox) targetDateBox.style.display = (val === 'target_date' || val === 'target_both') ? 'block' : 'none';
+    if (targetMileageBox) targetMileageBox.style.display = (val === 'target_mileage' || val === 'target_both') ? 'block' : 'none';
+}
+
+document.getElementsByName('inspect-due-type').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+        updateInspectDueVisibility(e.target.value);
+    });
+});
+
+const btnInspectHalve = document.getElementById('btn-inspect-halve-interval');
+if (btnInspectHalve) {
+    btnInspectHalve.addEventListener('click', () => {
+        if (!inspectCurrentPart) return;
+        
+        const monthsInput = document.getElementById('inspect-due-months');
+        const kmInput = document.getElementById('inspect-due-interval-mileage');
+        
+        const curMonths = parseInt(monthsInput.value) || parseInt(inspectCurrentPart.dueMonths) || 6;
+        const curKm = parseInt(kmInput.value) || parseInt(inspectCurrentPart.dueIntervalMileage) || 10000;
+        
+        // Halve the intervals for tighter check
+        monthsInput.value = Math.max(1, Math.round(curMonths / 2));
+        kmInput.value = Math.max(500, Math.round(curKm / 2));
+        
+        // If target mileage is set, shorten the delta
+        const targetKmInput = document.getElementById('inspect-target-mileage');
+        if (targetKmInput && targetKmInput.value) {
+            const curTarget = parseInt(targetKmInput.value) || 0;
+            const curMil = state.car.mileage;
+            if (curTarget > curMil) {
+                targetKmInput.value = curMil + Math.max(500, Math.round((curTarget - curMil) / 2));
+            }
+        }
+    });
+}
+
+const btnInspectKeep = document.getElementById('btn-inspect-keep-original');
+if (btnInspectKeep) {
+    btnInspectKeep.addEventListener('click', () => {
+        if (inspectCurrentPart) {
+            populateInspectDueSettings(inspectCurrentPart);
+        }
+    });
+}
+
+const btnCloseInspectModal = document.getElementById('btn-close-inspect-modal');
+if (btnCloseInspectModal) btnCloseInspectModal.addEventListener('click', () => closeModal('modal-inspect-part'));
+
+const btnCancelInspect = document.getElementById('btn-cancel-inspect');
+if (btnCancelInspect) btnCancelInspect.addEventListener('click', () => closeModal('modal-inspect-part'));
+
+// Submit Inspect Part Form
+const formInspectPart = document.getElementById('form-inspect-part');
+if (formInspectPart) {
+    formInspectPart.addEventListener('submit', (e) => {
+        e.preventDefault();
+        
+        const partId = document.getElementById('inspect-part-id').value;
+        const part = state.parts.find(p => p.id === partId);
+        if (!part) return;
+        
+        const inspectDate = document.getElementById('inspect-date').value || new Date().toISOString().split('T')[0];
+        const inspectMileage = parseInt(document.getElementById('inspect-mileage').value) || state.car.mileage || 0;
+        const inspectNotes = document.getElementById('inspect-notes').value.trim();
+        const inspectCost = parseFloat(document.getElementById('inspect-cost').value) || 0;
+        
+        const dueRadio = document.querySelector('input[name="inspect-due-type"]:checked');
+        const dueType = dueRadio ? dueRadio.value : (part.dueType || 'both');
+        const dueMonths = parseInt(document.getElementById('inspect-due-months').value) || 0;
+        const dueIntervalMileage = parseInt(document.getElementById('inspect-due-interval-mileage').value) || 0;
+        const targetDate = document.getElementById('inspect-target-date').value || '';
+        const targetMileage = parseInt(document.getElementById('inspect-target-mileage').value) || 0;
+
+        updateState(() => {
+            // 1. Update part baseline and next due settings
+            part.lastServiceDate = inspectDate;
+            part.lastServiceMileage = inspectMileage;
+            part.dueType = dueType;
+            part.dueMonths = dueMonths;
+            part.dueIntervalMileage = dueIntervalMileage;
+            part.targetDate = targetDate;
+            part.targetMileage = targetMileage;
+            
+            // 2. Add inspection record to history
+            const newHistId = 'hist-' + Math.random().toString(36).substr(2, 9);
+            const logNote = inspectNotes 
+                ? `🔍 ตรวจสอบสภาพแล้วยังใช้งานได้ดี (ใช้งานต่อ): ${inspectNotes}`
+                : `🔍 ตรวจสอบสภาพแล้วยังคงสภาพดี (ใช้งานต่อโดยยังไม่ต้องเปลี่ยนอะไหล่)`;
+                
+            state.history.push({
+                id: newHistId,
+                partId: part.id,
+                partName: part.name,
+                date: inspectDate,
+                mileage: inspectMileage,
+                cost: inspectCost,
+                mechanic: 'ตรวจสอบสภาพแล้ว',
+                notes: logNote,
+                attachments: [],
+                receipt: "",
+                receiptName: ""
+            });
+            
+            // 3. Update car overall mileage if inspect mileage is higher
+            if (inspectMileage > state.car.mileage) {
+                state.car.mileage = inspectMileage;
+                logMileagePoint(inspectDate, inspectMileage, true);
+            }
+        });
+        
+        closeModal('modal-inspect-part');
     });
 }
 
@@ -3472,6 +3648,21 @@ window.addEventListener('DOMContentLoaded', async () => {
             altFormat: "d/m/Y",
             locale: "th",
             defaultDate: new Date()
+        });
+
+        fpInspectDateInstance = flatpickr("#inspect-date", {
+            dateFormat: "Y-m-d",
+            altInput: true,
+            altFormat: "d/m/Y",
+            locale: "th",
+            defaultDate: new Date()
+        });
+
+        fpInspectTargetDateInstance = flatpickr("#inspect-target-date", {
+            dateFormat: "Y-m-d",
+            altInput: true,
+            altFormat: "d/m/Y",
+            locale: "th"
         });
 
         // Initialize MSAL OneDrive Cloud integration
