@@ -87,7 +87,7 @@
                 <div class="header-right">
                     <div class="mileage-widget">
                         <div class="mileage-info">
-                            <span class="label">เลขไมล์ปัจจุบัน (km)</span>
+                            <span class="label">เลขไมล์ปัจจุบัน (km) <span id="badge-estimated-mileage" class="badge-estimated" style="display: none;">⚡ ประมาณการ</span></span>
                             <span class="value" id="disp-current-mileage">0</span>
                         </div>
                         <button class="btn-update-mileage" id="btn-quick-mileage" title="อัปเดตเลขไมล์">
@@ -251,6 +251,17 @@
                                 <div class="form-group">
                                     <label for="set-car-mileage">เลขไมล์ปัจจุบัน (กิโลเมตร)</label>
                                     <input type="number" id="set-car-mileage" min="0" placeholder="ระบุเลขไมล์ล่าสุด">
+                                </div>
+                                <div class="form-group" style="margin-top: 10px; background: rgba(0, 242, 254, 0.04); border: 1px solid rgba(0, 242, 254, 0.15); border-radius: var(--border-radius-sm); padding: 10px 12px;">
+                                    <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; margin-bottom: 0;">
+                                        <input type="checkbox" id="set-car-auto-estimate" style="width: 18px; height: 18px; margin-top: 2px; accent-color: var(--primary); cursor: pointer;">
+                                        <div>
+                                            <div style="font-weight: 600; color: var(--primary); font-size: 0.88rem;">⚡ คำนวณทำนายเลขไมล์อัตโนมัติประจำวัน (Daily Auto-Estimate)</div>
+                                            <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px; line-height: 1.35;">
+                                                นำอัตราการวิ่งเฉลี่ยในอดีต (กม./วัน) มาคำนวณเพิ่มเลขไมล์ให้อัตโนมัติทุกๆ วันที่เปิดแอป เพื่อให้การเตือนอะไหล่เป็นปัจจุบันเสมอ (เมื่อบันทึกเลขไมล์จริงใหม่ ระบบจะเริ่มนับต่อจากวันนั้น)
+                                            </div>
+                                        </div>
+                                    </label>
                                 </div>
 
                                 <!-- Car Official Documents (Registration book, manual, tax) -->
@@ -975,10 +986,14 @@
                 <button class="btn-close-modal" id="btn-close-mileage-modal">&times;</button>
             </div>
             <form id="form-quick-mileage">
+                <div id="modal-mileage-estimate-box" class="estimate-notice-box" style="display: none;">
+                    <div class="estimate-notice-header">⚡ ระบบกำลังใช้เลขไมล์จากการประมาณการ</div>
+                    <div id="modal-mileage-estimate-desc" style="color: var(--text-muted); font-size: 0.8rem;"></div>
+                </div>
                 <div class="form-group">
                     <label for="quick-mileage-val">เลขไมล์ล่าสุดของรถวันนี้ (กม.) *</label>
                     <input type="number" id="quick-mileage-val" required min="0" placeholder="ระบุตัวเลขปัจจุบัน">
-                    <p class="desc" style="margin-top: 8px;">เลขไมล์ที่เปลี่ยนจะมีผลกับอะไหล่ที่กำหนดรอบตรวจแบบอิงระยะทาง</p>
+                    <p class="desc" style="margin-top: 8px;">เมื่อบันทึกแล้ว ระบบจะใช้ตัวเลขนี้เป็นเลขไมล์จริงล่าสุด และเริ่มคำนวณทำนายต่อจากวันนี้</p>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" id="btn-cancel-mileage">ยกเลิก</button>

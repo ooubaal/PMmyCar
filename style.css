@@ -305,6 +305,46 @@ a:hover {
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.badge-estimated {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: rgba(0, 242, 254, 0.15);
+    color: var(--primary);
+    border: 1px solid rgba(0, 242, 254, 0.35);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    box-shadow: 0 0 6px rgba(0, 242, 254, 0.2);
+    cursor: help;
+    white-space: nowrap;
+}
+
+.estimate-notice-box {
+    background: rgba(0, 242, 254, 0.08);
+    border: 1px solid rgba(0, 242, 254, 0.25);
+    border-radius: var(--border-radius-md);
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.estimate-notice-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: var(--primary);
+    margin-bottom: 4px;
 }
 
 .mileage-info .value {

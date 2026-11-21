@@ -14,7 +14,13 @@ const state = {
     car: {
         name: "รถของฉัน",
         plate: "",
-        mileage: 0
+        mileage: 0,
+        lastRecordedMileage: 0,
+        lastRecordedDate: "",
+        autoEstimateMileage: true,
+        isEstimatedMileage: false,
+        estimatedKmAdded: 0,
+        estimatedDays: 0
     },
     parts: [], // { id, name, category, description, lastServiceDate, lastServiceMileage, dueType, dueMonths, dueIntervalMileage }
     history: [], // { id, partId, partName, date, mileage, cost, mechanic, notes, receipt }
@@ -505,6 +511,7 @@ function applyCloudData(cloudDb) {
     state.mileageLog = cloudDb.mileageLog || [];
     state.lastUpdated = cloudDb.lastUpdated || Date.now();
     
+    applyDailyEstimatedMileage();
     saveStateToCache();
     renderAll();
     setSyncBadge("online", `ซิงก์สำเร็จ: ${new Date().toLocaleTimeString('th-TH')}`);
@@ -576,6 +583,7 @@ async function readFromLocalFile() {
         state.mileageLog = localDb.mileageLog || [];
         state.lastUpdated = localDb.lastUpdated || Date.now();
 
+        applyDailyEstimatedMileage();
         setSyncBadge("local-file", `เชื่อมโยงไฟล์เครื่องสำเร็จ`);
         document.getElementById('local-file-path-display').innerText = `เชื่อมต่อกับ: ${state.localFileHandle.name}`;
         
@@ -1127,6 +1135,90 @@ function calculateAverageDailyKm() {
     return Math.min(500, Math.max(2, avg));
 }
 
+// Calculate and apply daily auto-estimated mileage based on historical average driving rate
+function applyDailyEstimatedMileage() {
+    if (!state.car) {
+        state.car = {
+            name: "รถของฉัน",
+            plate: "",
+            mileage: 0,
+            lastRecordedMileage: 0,
+            lastRecordedDate: "",
+            autoEstimateMileage: true,
+            isEstimatedMileage: false,
+            estimatedKmAdded: 0,
+            estimatedDays: 0
+        };
+    }
+    
+    // Default autoEstimateMileage to true if undefined
+    if (state.car.autoEstimateMileage === undefined) {
+        state.car.autoEstimateMileage = true;
+    }
+
+    // If disabled by user in settings, restore verified mileage and clear estimate flags
+    if (state.car.autoEstimateMileage === false) {
+        if (state.car.isEstimatedMileage) {
+            if (state.car.lastRecordedMileage && state.car.lastRecordedMileage > 0) {
+                state.car.mileage = state.car.lastRecordedMileage;
+            }
+            state.car.isEstimatedMileage = false;
+            state.car.estimatedKmAdded = 0;
+            state.car.estimatedDays = 0;
+        }
+        return;
+    }
+
+    // Self-healing / Backward compatibility: find baseline recorded mileage and date
+    if (!state.car.lastRecordedMileage || !state.car.lastRecordedDate) {
+        if (state.mileageLog && state.mileageLog.length > 0) {
+            const validLogs = state.mileageLog
+                .filter(l => l && l.date && typeof l.mileage === 'number' && l.mileage > 0)
+                .sort((a, b) => new Date(a.date) - new Date(b.date));
+            if (validLogs.length > 0) {
+                const latestLog = validLogs[validLogs.length - 1];
+                state.car.lastRecordedMileage = latestLog.mileage;
+                state.car.lastRecordedDate = latestLog.date;
+            }
+        }
+        
+        // If still not set, initialize baseline to current car mileage and today
+        if (!state.car.lastRecordedMileage) {
+            state.car.lastRecordedMileage = state.car.mileage || 0;
+            state.car.lastRecordedDate = new Date().toISOString().split('T')[0];
+        }
+    }
+
+    const baselineMileage = state.car.lastRecordedMileage || state.car.mileage;
+    const baselineDateStr = state.car.lastRecordedDate;
+    if (!baselineDateStr || baselineMileage <= 0) return;
+
+    // Calculate days elapsed between baseline date and today
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const baseDate = new Date(baselineDateStr);
+    baseDate.setHours(0, 0, 0, 0);
+
+    const diffMs = today - baseDate;
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays > 0) {
+        const avgDailyKm = calculateAverageDailyKm();
+        const addedKm = Math.round(diffDays * avgDailyKm);
+        
+        state.car.mileage = baselineMileage + addedKm;
+        state.car.isEstimatedMileage = true;
+        state.car.estimatedKmAdded = addedKm;
+        state.car.estimatedDays = diffDays;
+    } else {
+        // Same day or baseline is today/future: use actual verified baseline
+        state.car.mileage = baselineMileage;
+        state.car.isEstimatedMileage = false;
+        state.car.estimatedKmAdded = 0;
+        state.car.estimatedDays = 0;
+    }
+}
+
 // Log a mileage point to history
 function logMileagePoint(date, mileage, silent = false) {
     if (!state.mileageLog) state.mileageLog = [];
@@ -1145,6 +1237,15 @@ function logMileagePoint(date, mileage, silent = false) {
     
     // Sort logs chronologically
     state.mileageLog.sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    // Update baseline recorded mileage and date if this date is on or after last recorded date
+    if (!state.car.lastRecordedDate || new Date(date) >= new Date(state.car.lastRecordedDate)) {
+        state.car.lastRecordedMileage = mileage;
+        state.car.lastRecordedDate = date;
+        state.car.isEstimatedMileage = false;
+        state.car.estimatedKmAdded = 0;
+        state.car.estimatedDays = 0;
+    }
     
     // Ensure state car mileage is updated if logged mileage is higher
     if (mileage > state.car.mileage) {
@@ -1436,10 +1537,26 @@ function renderHeader() {
     document.getElementById('disp-current-mileage').innerText = state.car.mileage.toLocaleString('th-TH');
     document.getElementById('car-quick-name').innerText = `${state.car.name} ${state.car.plate ? `(${state.car.plate})` : ''}`;
     
+    // Header estimated badge
+    const estBadge = document.getElementById('badge-estimated-mileage');
+    if (estBadge) {
+        if (state.car.isEstimatedMileage) {
+            estBadge.style.display = 'inline-flex';
+            estBadge.title = `ระบบคำนวณทำนายจากอัตราวิ่งเฉลี่ยในอดีต (${state.car.estimatedDays} วัน +${(state.car.estimatedKmAdded || 0).toLocaleString('th-TH')} กม.)`;
+        } else {
+            estBadge.style.display = 'none';
+        }
+    }
+
     // Settings forms values
     document.getElementById('set-car-name').value = state.car.name;
     document.getElementById('set-car-plate').value = state.car.plate;
     document.getElementById('set-car-mileage').value = state.car.mileage;
+
+    const autoEstCheck = document.getElementById('set-car-auto-estimate');
+    if (autoEstCheck) {
+        autoEstCheck.checked = state.car.autoEstimateMileage !== false;
+    }
 
     // Load car documents into working memory
     currentCarDocuments = (state.car.documents && Array.isArray(state.car.documents)) ? JSON.parse(JSON.stringify(state.car.documents)) : [];
@@ -1919,6 +2036,20 @@ window.deleteMileageLog = function(date) {
     if (!confirm("ยืนยันที่จะลบประวัติเลขไมล์ประจำวันที่ " + formatThaiDate(date) + "?")) return;
     updateState(() => {
         state.mileageLog = state.mileageLog.filter(log => log.date !== date);
+        if (state.car.lastRecordedDate === date) {
+            const validLogs = state.mileageLog
+                .filter(l => l && l.date && typeof l.mileage === 'number' && l.mileage > 0)
+                .sort((a, b) => new Date(a.date) - new Date(b.date));
+            if (validLogs.length > 0) {
+                const latest = validLogs[validLogs.length - 1];
+                state.car.lastRecordedMileage = latest.mileage;
+                state.car.lastRecordedDate = latest.date;
+            } else {
+                state.car.lastRecordedMileage = state.car.mileage;
+                state.car.lastRecordedDate = new Date().toISOString().split('T')[0];
+            }
+            applyDailyEstimatedMileage();
+        }
     });
 };
 
@@ -3407,6 +3538,20 @@ window.removeCarDoc = function(idx) {
 // Mileage Quick Update Form
 document.getElementById('btn-quick-mileage').addEventListener('click', () => {
     document.getElementById('quick-mileage-val').value = state.car.mileage;
+
+    const estBox = document.getElementById('modal-mileage-estimate-box');
+    const estDesc = document.getElementById('modal-mileage-estimate-desc');
+    if (estBox && estDesc) {
+        if (state.car.isEstimatedMileage) {
+            const avg = calculateAverageDailyKm();
+            const lastDateFormatted = state.car.lastRecordedDate ? formatThaiDate(state.car.lastRecordedDate) : '-';
+            estBox.style.display = 'block';
+            estDesc.innerHTML = `เลขไมล์จริงล่าสุด: <strong>${(state.car.lastRecordedMileage || 0).toLocaleString('th-TH')} กม.</strong> (${lastDateFormatted})<br>ระบบทำนายเพิ่ม <strong>+${(state.car.estimatedKmAdded || 0).toLocaleString('th-TH')} กม.</strong> (${state.car.estimatedDays} วันที่ผ่านมา จากอัตราเฉลี่ย ${avg.toFixed(1)} กม./วัน)`;
+        } else {
+            estBox.style.display = 'none';
+        }
+    }
+
     openModal('modal-mileage');
 });
 document.getElementById('btn-close-mileage-modal').addEventListener('click', () => closeModal('modal-mileage'));
@@ -3422,9 +3567,16 @@ document.getElementById('form-quick-mileage').addEventListener('submit', (e) => 
         }
     }
 
+    const todayStr = new Date().toISOString().split('T')[0];
+
     updateState(() => {
         state.car.mileage = mileage;
-        logMileagePoint(new Date().toISOString().split('T')[0], mileage, true);
+        state.car.lastRecordedMileage = mileage;
+        state.car.lastRecordedDate = todayStr;
+        state.car.isEstimatedMileage = false;
+        state.car.estimatedKmAdded = 0;
+        state.car.estimatedDays = 0;
+        logMileagePoint(todayStr, mileage, true);
     });
     
     closeModal('modal-mileage');
@@ -3436,13 +3588,22 @@ document.getElementById('form-car-info').addEventListener('submit', (e) => {
     const name = document.getElementById('set-car-name').value;
     const plate = document.getElementById('set-car-plate').value;
     const mileage = parseInt(document.getElementById('set-car-mileage').value) || 0;
+    const autoEstimate = document.getElementById('set-car-auto-estimate').checked;
+    const todayStr = new Date().toISOString().split('T')[0];
 
     updateState(() => {
         state.car.name = name;
         state.car.plate = plate;
-        state.car.mileage = mileage;
+        state.car.autoEstimateMileage = autoEstimate;
         state.car.documents = currentCarDocuments;
-        logMileagePoint(new Date().toISOString().split('T')[0], mileage, true);
+        state.car.mileage = mileage;
+        state.car.lastRecordedMileage = mileage;
+        state.car.lastRecordedDate = todayStr;
+        state.car.isEstimatedMileage = false;
+        state.car.estimatedKmAdded = 0;
+        state.car.estimatedDays = 0;
+        logMileagePoint(todayStr, mileage, true);
+        applyDailyEstimatedMileage();
     });
     
     alert("บันทึกข้อมูลรถยนต์เรียบร้อยแล้ว");
@@ -3608,7 +3769,17 @@ window.addEventListener('DOMContentLoaded', async () => {
         
         if (!cacheLoaded) {
             // Default initial state if completely empty
-            state.car = { name: "รถของฉัน", plate: "", mileage: 0 };
+            state.car = {
+                name: "รถของฉัน",
+                plate: "",
+                mileage: 0,
+                lastRecordedMileage: 0,
+                lastRecordedDate: "",
+                autoEstimateMileage: true,
+                isEstimatedMileage: false,
+                estimatedKmAdded: 0,
+                estimatedDays: 0
+            };
             state.parts = [];
             state.history = [];
             state.mileageLog = [];
@@ -3617,6 +3788,9 @@ window.addEventListener('DOMContentLoaded', async () => {
         
         // Attempt to auto-grant File System Access if previously chosen
         await attemptRestoreLocalFile();
+
+        // Calculate and apply daily auto-estimated mileage
+        applyDailyEstimatedMileage();
         
         // Initialize Flatpickr calendar elements
         fpLastDateInstance = flatpickr("#part-last-date", {
