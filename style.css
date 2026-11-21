@@ -1107,6 +1107,89 @@ a:hover {
     opacity: 1;
 }
 
+/* Document Attachment Badge in Timeline */
+.doc-attachment-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    padding: 10px 14px;
+    text-decoration: none;
+    color: var(--text-main);
+    transition: all var(--transition-speed);
+    max-width: 250px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.doc-attachment-badge:hover {
+    background: rgba(0, 242, 254, 0.08);
+    border-color: var(--primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 242, 254, 0.15);
+}
+
+.doc-badge-icon {
+    font-size: 1.8rem;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.doc-badge-info {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    gap: 2px;
+    text-align: left;
+}
+
+.doc-badge-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-main);
+}
+
+.doc-badge-action {
+    font-size: 0.72rem;
+    color: var(--primary);
+}
+
+.timeline-attachments-gallery {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+    align-items: center;
+    max-width: 100%;
+}
+
+.timeline-attach-thumb {
+    width: 80px;
+    height: 60px;
+    border-radius: var(--border-radius-sm);
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+    cursor: zoom-in;
+    position: relative;
+    transition: transform var(--transition-speed), border-color var(--transition-speed);
+    flex-shrink: 0;
+}
+
+.timeline-attach-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.timeline-attach-thumb:hover {
+    transform: scale(1.05);
+    border-color: var(--primary);
+}
+
 /* Upload zone interface */
 .receipt-upload-area {
     border: 2px dashed var(--border-color);
@@ -1166,6 +1249,47 @@ a:hover {
     object-fit: contain;
 }
 
+.doc-preview-box {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    padding: 16px 20px;
+    width: 100%;
+    max-width: 320px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.doc-preview-icon {
+    font-size: 2.2rem;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.doc-preview-text {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    gap: 2px;
+    text-align: left;
+}
+
+.doc-preview-name {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.doc-preview-size {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
 .btn-remove-image {
     position: absolute;
     top: 15px;
@@ -1188,6 +1312,100 @@ a:hover {
 
 .btn-remove-image:hover {
     transform: scale(1.1);
+}
+
+/* Multiple Attachments Preview Grid */
+.attachments-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 2px;
+}
+
+.attach-item {
+    position: relative;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: all var(--transition-speed);
+}
+
+.attach-item:hover {
+    border-color: var(--primary);
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.attach-item.is-image {
+    height: 90px;
+    cursor: pointer;
+}
+
+.attach-item.is-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.attach-item.is-doc {
+    padding: 12px 8px 8px 8px;
+    gap: 4px;
+    min-height: 90px;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+}
+
+.attach-doc-icon {
+    font-size: 1.8rem;
+    line-height: 1;
+}
+
+.attach-doc-name {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    padding: 0 4px;
+}
+
+.attach-doc-type {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+}
+
+.btn-remove-attach {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background-color: rgba(239, 68, 68, 0.9);
+    color: white;
+    border: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    font-size: 0.95rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    transition: transform var(--transition-speed);
+    z-index: 2;
+}
+
+.btn-remove-attach:hover {
+    transform: scale(1.15);
+    background-color: var(--danger);
 }
 
 .compression-status-bar {
@@ -1536,5 +1754,309 @@ a:hover {
     
     .radio-label span {
         min-height: 44px;
+    }
+}
+
+/* --- 10. PDF & DOCUMENT COMPRESSION AND VIEWER STYLES --- */
+
+/* Quick PDF Compressor Buttons */
+.header-compressor-btn {
+    padding: 6px 14px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: var(--border-radius-md);
+    background: rgba(0, 242, 254, 0.08);
+    border: 1px solid var(--primary);
+    color: var(--primary);
+    cursor: pointer;
+    transition: all var(--transition-speed);
+}
+.header-compressor-btn:hover {
+    background: var(--primary);
+    color: #000;
+    box-shadow: 0 0 15px rgba(0, 242, 254, 0.4);
+}
+
+.sidebar-compress-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    background: linear-gradient(135deg, rgba(0, 242, 254, 0.15), rgba(138, 43, 226, 0.15));
+    border: 1px solid rgba(0, 242, 254, 0.4);
+    border-radius: var(--border-radius-md);
+    color: var(--text-main);
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all var(--transition-speed);
+}
+.sidebar-compress-btn:hover {
+    border-color: var(--primary);
+    box-shadow: 0 0 12px rgba(0, 242, 254, 0.3);
+    transform: translateY(-1px);
+}
+
+.btn-text-tool {
+    background: transparent;
+    border: 1px solid rgba(0, 242, 254, 0.3);
+    color: var(--primary);
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all var(--transition-speed);
+}
+.btn-text-tool:hover {
+    background: rgba(0, 242, 254, 0.15);
+    border-color: var(--primary);
+}
+
+/* Document & PDF Viewer Toolbar */
+.doc-viewer-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    margin-bottom: 12px;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.toolbar-left, .toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* PDF Thumbnail Overlay & Tags */
+.pdf-tag-overlay {
+    position: absolute;
+    bottom: 4px;
+    left: 4px;
+    background: rgba(239, 68, 68, 0.9);
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+}
+.attach-size-badge {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    background: rgba(0, 0, 0, 0.75);
+    color: var(--text-muted);
+    font-size: 0.62rem;
+    padding: 1px 5px;
+    border-radius: 4px;
+}
+
+/* Part Card Attachments Bar */
+.part-attachments-bar {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.part-attachments-bar .attach-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+.part-attach-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.attach-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(0, 242, 254, 0.06);
+    border: 1px solid rgba(0, 242, 254, 0.25);
+    color: var(--text-main);
+    font-size: 0.75rem;
+    padding: 4px 10px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all var(--transition-speed);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.attach-pill:hover {
+    background: rgba(0, 242, 254, 0.15);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+/* Compressor Helper Modal (PDF24 style) */
+.compressor-helper-box {
+    max-width: 780px;
+    width: 95%;
+}
+.compressor-content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.compressor-stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    padding: 12px;
+}
+.compressor-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.compressor-stat .stat-lbl {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+.compressor-stat .stat-val {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-main);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.text-success { color: var(--success) !important; }
+.text-cyan { color: var(--primary) !important; }
+
+.compressor-settings-card {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    padding: 14px;
+}
+.preset-buttons-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+.preset-btn {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    padding: 10px;
+    text-align: left;
+    cursor: pointer;
+    transition: all var(--transition-speed);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.preset-btn:hover {
+    border-color: var(--primary);
+    background: rgba(0, 242, 254, 0.05);
+}
+.preset-btn.active {
+    border-color: var(--primary);
+    background: rgba(0, 242, 254, 0.12);
+    box-shadow: 0 0 10px rgba(0, 242, 254, 0.2);
+}
+.preset-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-main);
+}
+.preset-btn.active .preset-title {
+    color: var(--primary);
+}
+.preset-desc {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    line-height: 1.3;
+}
+.compression-slider-row {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Compressor Preview Box */
+.compressor-preview-box {
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.4);
+}
+.preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border-bottom: 1px solid var(--border-color);
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.preview-canvas-wrapper {
+    max-height: 340px;
+    overflow: auto;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 12px;
+    background: #0f111a;
+}
+#compressor-preview-canvas {
+    max-width: 100%;
+    height: auto;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    border-radius: 4px;
+}
+
+/* PDF24 External Link Banner */
+.pdf24-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: var(--border-radius-md);
+    padding: 10px 14px;
+}
+.pdf24-icon {
+    font-size: 1.4rem;
+}
+.pdf24-text {
+    flex: 1;
+    font-size: 0.8rem;
+    color: var(--text-main);
+    line-height: 1.4;
+}
+
+/* Responsive tweaks for compressor */
+@media (max-width: 768px) {
+    .preset-buttons-row {
+        grid-template-columns: 1fr;
+    }
+    .compressor-stats-row {
+        grid-template-columns: 1fr 1fr;
+    }
+    .header-compressor-btn span {
+        font-size: 0.75rem;
     }
 }

@@ -155,8 +155,33 @@ const DEMO_DATA = {
     lastUpdated: Date.now()
 };
 
-// Temporary in-memory compressed receipt image
+// Temporary in-memory attachments across modules
+let currentSelectedAttachments = []; // Service History attachments
+let currentPartAttachments = [];     // Parts Management attachments
+let currentCarDocuments = [];        // Car Info & Official Documents
 let currentSelectedReceiptBase64 = "";
+let currentSelectedReceiptName = "";
+
+// Active context for compressor helper ('history', 'part', 'car', 'standalone')
+let activeCompressorContext = 'history';
+let activeCompressorTargetAttachment = null;
+
+// Helper to normalize attachments from a history record (supports both single receipt and multiple attachments)
+function getRecordAttachments(record) {
+    if (!record) return [];
+    if (Array.isArray(record.attachments) && record.attachments.length > 0) {
+        return record.attachments;
+    }
+    if (record.receipt) {
+        return [{
+            id: 'att-legacy-' + (record.id || '1'),
+            name: record.receiptName || 'ไฟล์แนบ',
+            data: record.receipt,
+            type: record.receipt.startsWith('data:image/') ? 'image' : 'doc'
+        }];
+    }
+    return [];
+}
 
 // --- 2. INDEXEDDB FOR PERSISTENCE & FILE HANDLE CACHE ---
 let db = null;
@@ -617,57 +642,336 @@ function updateState(updaterFn) {
     renderAll();
 }
 
-// --- 6. IMAGE COMPRESSION (HD REDUCED SIZE CANVAS) ---
-function compressImage(file) {
+// --- 6. PDF & IMAGE COMPRESSION ENGINE (PDF24 STYLE - CLIENT-SIDE) ---
+
+// Initialize PDF.js worker if available
+if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+// Format byte size into readable string (B, KB, MB)
+function formatFileSize(bytes) {
+    if (!bytes || isNaN(bytes)) return '0 B';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+// Convert Data URI string into Uint8Array buffer
+function dataUriToUint8Array(dataUri) {
+    const base64 = dataUri.split(',')[1] || dataUri;
+    const binary = atob(base64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+}
+
+// Image compression via HTML5 Canvas (HD 1280px, quality: 0.68)
+function compressImage(fileOrDataUrl, options = {}) {
+    const {
+        maxDimension = 1280,
+        quality = 0.68
+    } = options;
+
     return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        
-        reader.onload = function(e) {
+        const processDataUrl = (dataUrl, origSize) => {
             const img = new Image();
-            img.src = e.target.result;
-            
+            img.src = dataUrl;
             img.onload = function() {
                 const canvas = document.createElement('canvas');
                 let width = img.width;
                 let height = img.height;
-                
-                // Max size HD (1280px)
-                const MAX_SIZE = 1280;
-                
+
                 if (width > height) {
-                    if (width > MAX_SIZE) {
-                        height = Math.round((height * MAX_SIZE) / width);
-                        width = MAX_SIZE;
+                    if (width > maxDimension) {
+                        height = Math.round((height * maxDimension) / width);
+                        width = maxDimension;
                     }
                 } else {
-                    if (height > MAX_SIZE) {
-                        width = Math.round((width * MAX_SIZE) / height);
-                        height = MAX_SIZE;
+                    if (height > maxDimension) {
+                        width = Math.round((width * maxDimension) / height);
+                        height = maxDimension;
                     }
                 }
-                
+
                 canvas.width = width;
                 canvas.height = height;
-                
+
                 const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, width, height);
                 ctx.drawImage(img, 0, 0, width, height);
-                
-                // Export as compressed Jpeg (quality: 0.65)
-                const base64Data = canvas.toDataURL('image/jpeg', 0.65);
-                
-                resolve(base64Data);
+
+                const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+                const compressedSize = Math.round((compressedBase64.length * 3) / 4);
+                const originalSize = origSize || Math.round((dataUrl.length * 3) / 4);
+                const savings = originalSize > compressedSize ? Math.round(((originalSize - compressedSize) / originalSize) * 100) : 0;
+
+                resolve({
+                    dataUrl: compressedBase64,
+                    originalSize: originalSize,
+                    compressedSize: compressedSize,
+                    savingsPercent: savings,
+                    thumbnail: compressedBase64
+                });
             };
-            
-            img.onerror = function(err) {
-                reject(err);
-            };
+            img.onerror = (err) => reject(err);
         };
-        
-        reader.onerror = function(err) {
-            reject(err);
-        };
+
+        if (typeof fileOrDataUrl === 'string') {
+            processDataUrl(fileOrDataUrl, Math.round((fileOrDataUrl.length * 3) / 4));
+        } else if (fileOrDataUrl instanceof File || fileOrDataUrl instanceof Blob) {
+            const reader = new FileReader();
+            reader.onload = (e) => processDataUrl(e.target.result, fileOrDataUrl.size);
+            reader.onerror = (err) => reject(err);
+            reader.readAsDataURL(fileOrDataUrl);
+        } else {
+            reject(new Error("Unsupported image input"));
+        }
     });
+}
+
+// PDF compression via PDF.js rendering & PDF-Lib reassembly (Pure client-side, PDF24 style)
+async function compressPdf(fileOrDataUrl, options = {}) {
+    const {
+        maxDimension = 1280,
+        quality = 0.70,
+        onProgress = null
+    } = options;
+
+    if (!window.pdfjsLib || !window.PDFLib) {
+        throw new Error("PDF processing libraries are loading or unavailable");
+    }
+
+    // Convert input to ArrayBuffer
+    let arrayBuffer;
+    let originalSize = 0;
+
+    if (fileOrDataUrl instanceof ArrayBuffer) {
+        arrayBuffer = fileOrDataUrl;
+        originalSize = arrayBuffer.byteLength;
+    } else if (fileOrDataUrl instanceof File || fileOrDataUrl instanceof Blob) {
+        originalSize = fileOrDataUrl.size;
+        arrayBuffer = await fileOrDataUrl.arrayBuffer();
+    } else if (typeof fileOrDataUrl === 'string') {
+        const bytes = dataUriToUint8Array(fileOrDataUrl);
+        originalSize = bytes.byteLength;
+        arrayBuffer = bytes.buffer;
+    } else {
+        throw new Error("Unsupported PDF source");
+    }
+
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+    const pdfDoc = await loadingTask.promise;
+    const numPages = pdfDoc.numPages;
+
+    // Create new lightweight PDF using pdf-lib
+    const newPdfDoc = await PDFLib.PDFDocument.create();
+    let firstPageThumbnail = null;
+
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+        if (onProgress) {
+            onProgress(pageNum, numPages);
+        }
+
+        const page = await pdfDoc.getPage(pageNum);
+        const viewportUnscaled = page.getViewport({ scale: 1.0 });
+
+        // Calculate scale to maintain sharp legibility while capping max dimensions
+        let scale = 1.5; // Base 144 DPI sharp scale for crisp Thai typography
+        const maxDim = Math.max(viewportUnscaled.width, viewportUnscaled.height);
+        if (maxDim * scale > maxDimension) {
+            scale = maxDimension / maxDim;
+        }
+        if (scale < 1.0) scale = 1.0;
+
+        const viewport = page.getViewport({ scale: scale });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(viewport.width);
+        canvas.height = Math.round(viewport.height);
+
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        await page.render({
+            canvasContext: ctx,
+            viewport: viewport
+        }).promise;
+
+        const pageJpgDataUrl = canvas.toDataURL('image/jpeg', quality);
+
+        if (pageNum === 1) {
+            firstPageThumbnail = pageJpgDataUrl;
+        }
+
+        const embeddedImage = await newPdfDoc.embedJpg(pageJpgDataUrl);
+        const pdfPage = newPdfDoc.addPage([viewportUnscaled.width, viewportUnscaled.height]);
+        pdfPage.drawImage(embeddedImage, {
+            x: 0,
+            y: 0,
+            width: viewportUnscaled.width,
+            height: viewportUnscaled.height
+        });
+    }
+
+    const compressedPdfBytes = await newPdfDoc.save();
+    const compressedPdfBase64 = await newPdfDoc.saveAsBase64({ dataUri: true });
+    const compressedSize = compressedPdfBytes.byteLength;
+
+    // If compressed size is actually smaller, use it; otherwise fallback to original
+    const useCompressed = compressedSize < originalSize;
+    const finalDataUrl = useCompressed ? compressedPdfBase64 : (typeof fileOrDataUrl === 'string' ? fileOrDataUrl : compressedPdfBase64);
+    const finalSize = useCompressed ? compressedSize : originalSize;
+    const savings = originalSize > finalSize ? Math.round(((originalSize - finalSize) / originalSize) * 100) : 0;
+
+    return {
+        dataUrl: finalDataUrl,
+        originalSize: originalSize,
+        compressedSize: finalSize,
+        pageCount: numPages,
+        thumbnail: firstPageThumbnail,
+        savingsPercent: savings
+    };
+}
+
+// Universal attachment processor across modules
+async function processAttachmentFiles(files, targetArray, previewRenderFn, statusElemId, context = 'history') {
+    if (!files || files.length === 0) return;
+    const statusElem = document.getElementById(statusElemId);
+    if (statusElem) {
+        statusElem.style.display = 'flex';
+        statusElem.innerHTML = `<span class="spinner">⏳</span> กำลังประมวลผลและบีบอัดไฟล์ (สไตล์ PDF24)...`;
+    }
+
+    const MAX_MB = 20; // Support up to 20MB scans because client-side compression reduces to ~100KB!
+    for (const file of files) {
+        if (file.size > MAX_MB * 1024 * 1024) {
+            alert(`ไฟล์ "${file.name}" มีขนาดใหญ่เกินไป (${(file.size / (1024 * 1024)).toFixed(1)} MB)\nกรุณาเลือกไฟล์ขนาดไม่เกิน ${MAX_MB} MB`);
+            continue;
+        }
+
+        const attachId = 'att-' + Math.random().toString(36).substr(2, 9);
+        const lowerName = file.name.toLowerCase();
+
+        if (file.type.startsWith('image/')) {
+            try {
+                if (statusElem) {
+                    statusElem.innerHTML = `<span class="spinner">⏳</span> กำลังบีบอัดรูปภาพ "${file.name}" (HD)...`;
+                }
+                const res = await compressImage(file);
+                targetArray.push({
+                    id: attachId,
+                    name: file.name,
+                    data: res.dataUrl,
+                    thumbnail: res.thumbnail,
+                    type: 'image',
+                    originalSize: res.originalSize,
+                    compressedSize: res.compressedSize,
+                    savingsPercent: res.savingsPercent
+                });
+            } catch (err) {
+                console.error("Image compression error:", err);
+                alert(`เกิดข้อผิดพลาดในการประมวลผลรูปภาพ: ${file.name}`);
+            }
+        } else if (lowerName.endsWith('.pdf') || file.type === 'application/pdf') {
+            try {
+                if (statusElem) {
+                    statusElem.innerHTML = `<span class="spinner">⏳</span> กำลังบีบอัด PDF "${file.name}" (สไตล์ PDF24)...`;
+                }
+                if (window.pdfjsLib && window.PDFLib) {
+                    const res = await compressPdf(file, {
+                        maxDimension: 1280,
+                        quality: 0.70,
+                        onProgress: (curr, total) => {
+                            if (statusElem) {
+                                statusElem.innerHTML = `<span class="spinner">⏳</span> กำลังบีบอัด PDF "${file.name}" หน้า ${curr}/${total}...`;
+                            }
+                        }
+                    });
+                    targetArray.push({
+                        id: attachId,
+                        name: file.name,
+                        data: res.dataUrl,
+                        thumbnail: res.thumbnail,
+                        type: 'doc',
+                        docType: 'pdf',
+                        pageCount: res.pageCount,
+                        originalSize: res.originalSize,
+                        compressedSize: res.compressedSize,
+                        savingsPercent: res.savingsPercent
+                    });
+                } else {
+                    // Fallback to FileReader if libraries are unavailable
+                    const reader = new FileReader();
+                    await new Promise(res => {
+                        reader.onload = (e) => {
+                            targetArray.push({
+                                id: attachId,
+                                name: file.name,
+                                data: e.target.result,
+                                type: 'doc',
+                                docType: 'pdf',
+                                originalSize: file.size,
+                                compressedSize: file.size
+                            });
+                            res();
+                        };
+                        reader.readAsDataURL(file);
+                    });
+                }
+            } catch (err) {
+                console.error("PDF compression error:", err);
+                const reader = new FileReader();
+                await new Promise(res => {
+                    reader.onload = (e) => {
+                        targetArray.push({
+                            id: attachId,
+                            name: file.name,
+                            data: e.target.result,
+                            type: 'doc',
+                            docType: 'pdf',
+                            originalSize: file.size,
+                            compressedSize: file.size
+                        });
+                        res();
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+        } else {
+            // Other office documents
+            await new Promise(resolve => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    targetArray.push({
+                        id: attachId,
+                        name: file.name,
+                        data: e.target.result,
+                        type: 'doc',
+                        originalSize: file.size,
+                        compressedSize: file.size
+                    });
+                    resolve();
+                };
+                reader.onerror = () => {
+                    alert(`ไม่สามารถอ่านไฟล์: ${file.name}`);
+                    resolve();
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+    }
+
+    if (statusElem) {
+        statusElem.style.display = 'none';
+    }
+    if (typeof previewRenderFn === 'function') {
+        previewRenderFn();
+    }
 }
 
 // --- 7. MAINTENANCE BUSINESS LOGIC (CALCULATE DUES) ---
@@ -678,18 +982,51 @@ function calculateAverageDailyKm() {
         return 30; // Fallback default value (30 km/day)
     }
     
+    // Filter out invalid records (e.g. mileage is 0 or non-numeric)
+    const validLogs = state.mileageLog.filter(log => log && log.date && typeof log.mileage === 'number' && log.mileage > 0);
+    
+    if (validLogs.length < 2) {
+        return 30;
+    }
+    
     // Sort chronologically
-    const sortedLogs = [...state.mileageLog].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const sortedLogs = [...validLogs].sort((a, b) => new Date(a.date) - new Date(b.date));
     
-    const earliest = sortedLogs[0];
-    const latest = sortedLogs[sortedLogs.length - 1];
+    // Clean up chronological regressions by scanning backwards from the latest entry
+    const cleanedLogs = [];
+    let lastValidMileage = Infinity;
+    for (let i = sortedLogs.length - 1; i >= 0; i--) {
+        const log = sortedLogs[i];
+        if (log.mileage < lastValidMileage) {
+            cleanedLogs.unshift(log);
+            lastValidMileage = log.mileage;
+        }
+    }
     
-    const distanceDiff = latest.mileage - earliest.mileage;
-    const timeDiffMs = new Date(latest.date) - new Date(earliest.date);
-    const timeDiffDays = timeDiffMs / (1000 * 60 * 60 * 24);
+    if (cleanedLogs.length < 2) {
+        return 30;
+    }
+    
+    // Calculate based on recent history (up to the last 5 entries to represent recent behavior)
+    const recentLogs = cleanedLogs.slice(-5);
+    const earliest = recentLogs[0];
+    const latest = recentLogs[recentLogs.length - 1];
+    
+    let distanceDiff = latest.mileage - earliest.mileage;
+    let timeDiffMs = new Date(latest.date) - new Date(earliest.date);
+    let timeDiffDays = timeDiffMs / (1000 * 60 * 60 * 24);
+    
+    // Fallback if recent calculation yields invalid values (e.g. all on the same day)
+    if (timeDiffDays <= 0 || distanceDiff <= 0) {
+        const globalEarliest = cleanedLogs[0];
+        const globalLatest = cleanedLogs[cleanedLogs.length - 1];
+        distanceDiff = globalLatest.mileage - globalEarliest.mileage;
+        timeDiffMs = new Date(globalLatest.date) - new Date(globalEarliest.date);
+        timeDiffDays = timeDiffMs / (1000 * 60 * 60 * 24);
+    }
     
     if (timeDiffDays <= 0 || distanceDiff <= 0) {
-        return 30; // Fallback if dates are identical or distance went backwards
+        return 30;
     }
     
     const avg = distanceDiff / timeDiffDays;
@@ -902,6 +1239,10 @@ function renderHeader() {
     document.getElementById('set-car-name').value = state.car.name;
     document.getElementById('set-car-plate').value = state.car.plate;
     document.getElementById('set-car-mileage').value = state.car.mileage;
+
+    // Load car documents into working memory
+    currentCarDocuments = (state.car.documents && Array.isArray(state.car.documents)) ? JSON.parse(JSON.stringify(state.car.documents)) : [];
+    renderCarDocsPreview();
 }
 
 function renderDashboard() {
@@ -991,6 +1332,7 @@ function renderDashboard() {
 
 function updateDocumentSummaryText(elementId, part) {
     const el = document.getElementById(elementId);
+    if (!el) return;
     if (!part) {
         el.innerText = "ยังไม่ได้เปิดติดตาม";
         el.className = "status-tag tag-inactive";
@@ -999,6 +1341,40 @@ function updateDocumentSummaryText(elementId, part) {
     const calc = calculatePartStatus(part, state.car.mileage);
     el.innerText = calc.explanation;
     el.className = `status-tag tag-${calc.status}`;
+
+    // Find any attached PDF or document in the part or in history records
+    let docAttachment = null;
+    if (part.attachments && Array.isArray(part.attachments) && part.attachments.length > 0) {
+        docAttachment = part.attachments[0];
+    } else {
+        const histRecords = state.history.filter(h => h.partId === part.id);
+        for (const h of histRecords) {
+            const atts = getRecordAttachments(h);
+            if (atts && atts.length > 0) {
+                docAttachment = atts[0];
+                break;
+            }
+        }
+    }
+
+    let quickBtn = el.parentElement.querySelector('.doc-quick-btn');
+    if (!quickBtn) {
+        quickBtn = document.createElement('span');
+        quickBtn.className = 'doc-quick-btn';
+        el.parentElement.appendChild(quickBtn);
+    }
+
+    if (docAttachment) {
+        const isPdf = (docAttachment.name && docAttachment.name.toLowerCase().endsWith('.pdf')) || docAttachment.docType === 'pdf';
+        const label = isPdf ? '📕 เปิดดู PDF' : '👁️ เปิดดูเอกสาร';
+        quickBtn.innerHTML = `
+            <button type="button" class="btn btn-xs btn-outline-cyan" style="margin-left: 8px; font-size: 0.72rem; padding: 2px 8px; border-radius: 4px;" onclick="viewQuickDoc('${part.id}')" title="เปิดดู ${docAttachment.name || 'เอกสาร'}">
+                ${label}
+            </button>
+        `;
+    } else {
+        quickBtn.innerHTML = '';
+    }
 }
 
 function renderTracker() {
@@ -1086,6 +1462,24 @@ function renderTracker() {
                     </div>
                 </div>
 
+                ${part.attachments && Array.isArray(part.attachments) && part.attachments.length > 0 ? `
+                    <div class="part-attachments-bar">
+                        <span class="attach-label">📎 เอกสาร/ใบรับประกันแนบ (${part.attachments.length} ไฟล์):</span>
+                        <div class="part-attach-pills">
+                            ${part.attachments.map((att, attIdx) => {
+                                const isPdf = (att.name && att.name.toLowerCase().endsWith('.pdf')) || att.docType === 'pdf';
+                                const icon = att.type === 'image' ? '🖼️' : (isPdf ? '📕' : '📄');
+                                const sizeStr = att.compressedSize ? ` <small>(${formatFileSize(att.compressedSize)})</small>` : '';
+                                return `
+                                    <button type="button" class="attach-pill" onclick="viewPartAttachment('${part.id}', ${attIdx})" title="คลิกเพื่อเปิดดู ${att.name || 'เอกสาร'}">
+                                        <span>${icon} ${att.name || 'เอกสาร'}${sizeStr}</span>
+                                    </button>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+
                 <div class="part-card-footer">
                     <button class="btn btn-sm btn-secondary" onclick="openEditPart('${part.id}')">แก้ไขสเปก</button>
                     <button class="btn btn-sm btn-primary" onclick="openLogReplacement('${part.id}')" style="flex-grow:1;">
@@ -1127,12 +1521,59 @@ function renderHistory() {
     filteredHistory.forEach(record => {
         const dateFormatted = new Date(record.date).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
         
+        const attachments = getRecordAttachments(record);
         let receiptHTML = '';
-        if (record.receipt) {
+        if (attachments.length > 0) {
+            let itemsHTML = '';
+            attachments.forEach((att, attIdx) => {
+                const name = att.name || 'เอกสารแนบ';
+                const lowerName = name.toLowerCase();
+                const isPdf = lowerName.endsWith('.pdf') || att.docType === 'pdf';
+                const sizeText = att.compressedSize ? formatFileSize(att.compressedSize) : '';
+
+                if (att.type === 'image') {
+                    itemsHTML += `
+                        <div class="timeline-attach-thumb" onclick="zoomAttachment('${record.id}', ${attIdx})" title="คลิกเพื่อเปิดดูรูป (${name})">
+                            <img src="${att.data}" alt="${name}">
+                            ${sizeText ? `<span class="attach-size-badge">${sizeText}</span>` : ''}
+                        </div>
+                    `;
+                } else if (isPdf && att.thumbnail) {
+                    itemsHTML += `
+                        <div class="timeline-attach-thumb is-pdf-thumb" onclick="zoomAttachment('${record.id}', ${attIdx})" title="คลิกเพื่อเปิดดู PDF (${name})">
+                            <img src="${att.thumbnail}" alt="${name}">
+                            <span class="pdf-tag-overlay">📕 PDF</span>
+                            ${sizeText ? `<span class="attach-size-badge">${sizeText}</span>` : ''}
+                        </div>
+                    `;
+                } else {
+                    let icon = '📄';
+                    let typeName = 'เอกสาร';
+                    if (isPdf) {
+                        icon = '📕';
+                        typeName = 'PDF';
+                    } else if (lowerName.endsWith('.xls') || lowerName.endsWith('.xlsx') || lowerName.endsWith('.csv')) {
+                        icon = '📊';
+                        typeName = 'Excel';
+                    } else if (lowerName.endsWith('.doc') || lowerName.endsWith('.docx')) {
+                        icon = '📝';
+                        typeName = 'Word';
+                    }
+                    itemsHTML += `
+                        <div class="doc-attachment-badge" onclick="zoomAttachment('${record.id}', ${attIdx})" title="คลิกเพื่อเปิดดู (${name})" style="cursor: pointer;">
+                            <span class="doc-badge-icon">${icon}</span>
+                            <div class="doc-badge-info">
+                                <span class="doc-badge-name">${name}</span>
+                                <span class="doc-badge-action">👁️ เปิดดู ${typeName} ${sizeText ? `(${sizeText})` : ''} ↗</span>
+                            </div>
+                        </div>
+                    `;
+                }
+            });
             receiptHTML = `
                 <div class="timeline-receipt-area">
-                    <div class="receipt-thumbnail" onclick="zoomReceipt('${record.id}')">
-                        <img src="${record.receipt}" alt="Receipt image">
+                    <div class="timeline-attachments-gallery">
+                        ${itemsHTML}
                     </div>
                 </div>
             `;
@@ -1180,6 +1621,10 @@ function populatePartSelectDropdowns() {
         historyModalSelect.insertAdjacentHTML('beforeend', `<option value="${part.id}">${part.name}</option>`);
     });
 
+    // Add general repair options
+    historyFilter.insertAdjacentHTML('beforeend', '<option value="general-repair">งานซ่อมบำรุงทั่วไป</option>');
+    historyModalSelect.insertAdjacentHTML('beforeend', '<option value="general-repair">🔧 งานซ่อมบำรุงทั่วไป (ไม่ได้เปลี่ยนอะไหล่)</option>');
+
     historyFilter.value = selectedHistoryFilter;
 }
 
@@ -1191,23 +1636,26 @@ window.openEditHistory = function(id) {
     document.getElementById('hist-id').value = record.id;
     document.getElementById('hist-part-id').value = record.partId;
     
+    const customGroup = document.getElementById('hist-custom-name-group');
+    const customInput = document.getElementById('hist-custom-name');
+    if (record.partId === 'general-repair') {
+        customGroup.style.display = 'block';
+        customInput.required = true;
+        customInput.value = record.partName;
+    } else {
+        customGroup.style.display = 'none';
+        customInput.required = false;
+        customInput.value = '';
+    }
+    
     if (fpHistDateInstance) fpHistDateInstance.setDate(record.date);
     document.getElementById('hist-mileage').value = record.mileage;
     document.getElementById('hist-cost').value = record.cost || '';
     document.getElementById('hist-mechanic').value = record.mechanic || '';
     document.getElementById('hist-notes').value = record.notes || '';
     
-    currentSelectedReceiptBase64 = record.receipt || "";
-    
-    // Set up receipt preview
-    if (record.receipt) {
-        document.getElementById('receipt-preview-img').src = record.receipt;
-        document.getElementById('receipt-preview-container').style.display = 'flex';
-        document.getElementById('receipt-upload-placeholder').style.display = 'none';
-    } else {
-        document.getElementById('receipt-preview-container').style.display = 'none';
-        document.getElementById('receipt-upload-placeholder').style.display = 'flex';
-    }
+    currentSelectedAttachments = JSON.parse(JSON.stringify(getRecordAttachments(record)));
+    renderAttachmentsPreview();
     document.getElementById('compression-status').style.display = 'none';
     
     document.getElementById('modal-history-title').innerText = "แก้ไขประวัติการบำรุงรักษา";
@@ -1321,6 +1769,12 @@ document.getElementById('btn-open-add-part-modal').addEventListener('click', () 
     if (fpLastDateInstance) fpLastDateInstance.setDate(new Date());
     document.getElementById('part-last-mileage').value = state.car.mileage;
     
+    // Reset attachments
+    currentPartAttachments = [];
+    renderPartAttachmentsPreview();
+    const compStatus = document.getElementById('part-compression-status');
+    if (compStatus) compStatus.style.display = 'none';
+
     // Toggle correct inputs
     document.getElementById('radio-due-time').click();
     openModal('modal-part');
@@ -1348,6 +1802,89 @@ document.getElementsByName('due-type').forEach(radio => {
     });
 });
 
+// Part drop zone trigger click
+const partDropZone = document.getElementById('part-drop-zone');
+if (partDropZone) {
+    partDropZone.addEventListener('click', () => {
+        document.getElementById('part-receipt-file').click();
+    });
+}
+
+// Part file input change handler
+const partFileInput = document.getElementById('part-receipt-file');
+if (partFileInput) {
+    partFileInput.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files || []);
+        await processAttachmentFiles(files, currentPartAttachments, renderPartAttachmentsPreview, 'part-compression-status', 'part');
+        e.target.value = '';
+    });
+}
+
+// Render attachments preview gallery inside Part Modal
+function renderPartAttachmentsPreview() {
+    const grid = document.getElementById('part-attachments-preview-grid');
+    const countSpan = document.getElementById('part-files-count');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    if (!currentPartAttachments || currentPartAttachments.length === 0) {
+        grid.style.display = 'none';
+        if (countSpan) countSpan.innerText = '';
+        return;
+    }
+
+    grid.style.display = 'grid';
+    if (countSpan) countSpan.innerText = `(แนบแล้ว ${currentPartAttachments.length} ไฟล์)`;
+
+    currentPartAttachments.forEach((att, idx) => {
+        let itemHTML = '';
+        const lowerName = (att.name || '').toLowerCase();
+        const isPdf = lowerName.endsWith('.pdf') || att.docType === 'pdf';
+        const sizeStr = att.compressedSize ? formatFileSize(att.compressedSize) : '';
+
+        if (att.thumbnail || att.type === 'image') {
+            const imgSrc = att.thumbnail || att.data;
+            itemHTML = `
+                <div class="attach-item is-image" onclick="openDocumentViewer(currentPartAttachments[${idx}], 'เอกสารอะไหล่', '${att.name || ''}')" title="คลิกเพื่อเปิดดู (${att.name || 'เอกสาร'})">
+                    <img src="${imgSrc}" alt="${att.name || 'เอกสาร'}">
+                    ${isPdf ? '<span class="pdf-tag-overlay">📕 PDF</span>' : ''}
+                    ${sizeStr ? `<span class="attach-size-badge">${sizeStr}</span>` : ''}
+                    <button type="button" class="btn-remove-attach" onclick="event.stopPropagation(); removePartAttachment(${idx});" title="ลบไฟล์นี้">&times;</button>
+                </div>
+            `;
+        } else {
+            let icon = '📄';
+            let desc = 'เอกสาร';
+            if (isPdf) { icon = '📕'; desc = 'PDF'; }
+            else if (lowerName.endsWith('.xls') || lowerName.endsWith('.xlsx') || lowerName.endsWith('.csv')) { icon = '📊'; desc = 'Excel'; }
+            else if (lowerName.endsWith('.doc') || lowerName.endsWith('.docx')) { icon = '📝'; desc = 'Word'; }
+
+            itemHTML = `
+                <div class="attach-item is-doc" onclick="openDocumentViewer(currentPartAttachments[${idx}], 'เอกสารอะไหล่', '${att.name || ''}')" style="cursor: pointer;">
+                    <span class="attach-doc-icon">${icon}</span>
+                    <span class="attach-doc-name" title="${att.name}">${att.name}</span>
+                    <span class="attach-doc-type">${desc} ${sizeStr ? `(${sizeStr})` : ''}</span>
+                    <button type="button" class="btn-remove-attach" onclick="event.stopPropagation(); removePartAttachment(${idx});" title="ลบไฟล์นี้">&times;</button>
+                </div>
+            `;
+        }
+        grid.insertAdjacentHTML('beforeend', itemHTML);
+    });
+}
+
+window.removePartAttachment = function(idx) {
+    if (idx >= 0 && idx < currentPartAttachments.length) {
+        currentPartAttachments.splice(idx, 1);
+        renderPartAttachmentsPreview();
+    }
+};
+
+window.viewPartAttachment = function(partId, attIdx) {
+    const part = state.parts.find(p => p.id === partId);
+    if (!part || !part.attachments || !part.attachments[attIdx]) return;
+    openDocumentViewer(part.attachments[attIdx], part.name, `เอกสารอะไหล่ / ใบรับประกัน`);
+};
+
 // Save Part Form Submit
 document.getElementById('form-part').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -1368,12 +1905,24 @@ document.getElementById('form-part').addEventListener('submit', (e) => {
             // Edit existing
             const idx = state.parts.findIndex(p => p.id === id);
             if (idx !== -1) {
-                state.parts[idx] = { id, name, category, description, lastServiceDate: lastDate, lastServiceMileage: lastMileage, dueType, dueMonths, dueIntervalMileage };
+                state.parts[idx] = { 
+                    id, name, category, description, 
+                    lastServiceDate: lastDate, 
+                    lastServiceMileage: lastMileage, 
+                    dueType, dueMonths, dueIntervalMileage,
+                    attachments: currentPartAttachments
+                };
             }
         } else {
             // Add new
             const newId = 'part-' + Math.random().toString(36).substr(2, 9);
-            state.parts.push({ id: newId, name, category, description, lastServiceDate: lastDate, lastServiceMileage: lastMileage, dueType, dueMonths, dueIntervalMileage });
+            state.parts.push({ 
+                id: newId, name, category, description, 
+                lastServiceDate: lastDate, 
+                lastServiceMileage: lastMileage, 
+                dueType, dueMonths, dueIntervalMileage,
+                attachments: currentPartAttachments
+            });
         }
     });
 
@@ -1395,6 +1944,12 @@ window.openEditPart = function(id) {
     document.querySelector(`input[name="due-type"][value="${part.dueType}"]`).click();
     document.getElementById('part-due-months').value = part.dueMonths;
     document.getElementById('part-due-interval-mileage').value = part.dueIntervalMileage;
+
+    // Load attachments
+    currentPartAttachments = (part.attachments && Array.isArray(part.attachments)) ? JSON.parse(JSON.stringify(part.attachments)) : [];
+    renderPartAttachmentsPreview();
+    const compStatus = document.getElementById('part-compression-status');
+    if (compStatus) compStatus.style.display = 'none';
     
     document.getElementById('modal-part-title').innerText = "แก้ไขข้อมูลสเปกอะไหล่";
     openModal('modal-part');
@@ -1406,11 +1961,17 @@ window.openLogReplacement = function(partId) {
     
     document.getElementById('form-history').reset();
     document.getElementById('hist-id').value = '';
+    currentSelectedAttachments = [];
     currentSelectedReceiptBase64 = "";
+    currentSelectedReceiptName = "";
     
-    // Clear receipt preview
-    document.getElementById('receipt-preview-container').style.display = 'none';
-    document.getElementById('receipt-upload-placeholder').style.display = 'flex';
+    // Clear custom name input
+    document.getElementById('hist-custom-name-group').style.display = 'none';
+    document.getElementById('hist-custom-name').required = false;
+    document.getElementById('hist-custom-name').value = '';
+
+    // Clear attachments preview
+    renderAttachmentsPreview();
     document.getElementById('compression-status').style.display = 'none';
 
     if (fpHistDateInstance) fpHistDateInstance.setDate(new Date());
@@ -1421,6 +1982,45 @@ window.openLogReplacement = function(partId) {
     }
     
     document.getElementById('modal-history-title').innerText = "บันทึกการเปลี่ยนอะไหล่/บำรุงรักษา";
+    openModal('modal-history');
+};
+
+// Edit existing service history record
+window.openEditHistory = function(id) {
+    const record = state.history.find(h => h.id === id);
+    if (!record) return;
+    
+    document.getElementById('form-history').reset();
+    document.getElementById('hist-id').value = record.id;
+    
+    // Check if it's general repair or linked to part
+    const partSelect = document.getElementById('hist-part-id');
+    const customGroup = document.getElementById('hist-custom-name-group');
+    const customInput = document.getElementById('hist-custom-name');
+    
+    if (record.partId === 'general-repair') {
+        partSelect.value = 'general-repair';
+        customGroup.style.display = 'block';
+        customInput.required = true;
+        customInput.value = record.partName;
+    } else {
+        partSelect.value = record.partId;
+        customGroup.style.display = 'none';
+        customInput.required = false;
+        customInput.value = '';
+    }
+
+    if (fpHistDateInstance) fpHistDateInstance.setDate(record.date);
+    document.getElementById('hist-mileage').value = record.mileage || '';
+    document.getElementById('hist-cost').value = record.cost || '';
+    document.getElementById('hist-mechanic').value = record.mechanic || '';
+    document.getElementById('hist-notes').value = record.notes || '';
+    
+    currentSelectedAttachments = JSON.parse(JSON.stringify(getRecordAttachments(record)));
+    renderAttachmentsPreview();
+    document.getElementById('compression-status').style.display = 'none';
+    
+    document.getElementById('modal-history-title').innerText = "แก้ไขประวัติการบำรุงรักษา";
     openModal('modal-history');
 };
 
@@ -1436,38 +2036,77 @@ document.getElementById('receipt-drop-zone').addEventListener('click', () => {
     document.getElementById('hist-receipt-file').click();
 });
 
-// Image file input change handler with Canvas compression
-document.getElementById('hist-receipt-file').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+// Render attachments preview gallery inside Service History modal
+function renderAttachmentsPreview() {
+    const grid = document.getElementById('attachments-preview-grid');
+    const countSpan = document.getElementById('hist-files-count');
+    if (!grid) return;
+    grid.innerHTML = '';
 
-    // Show compression progress
-    document.getElementById('compression-status').style.display = 'flex';
-    document.getElementById('receipt-upload-placeholder').style.display = 'none';
-
-    try {
-        const compressedBase64 = await compressImage(file);
-        currentSelectedReceiptBase64 = compressedBase64;
-        
-        // Show Preview
-        document.getElementById('receipt-preview-img').src = compressedBase64;
-        document.getElementById('receipt-preview-container').style.display = 'flex';
-    } catch (err) {
-        console.error("Image compression error:", err);
-        alert("บีบอัดรูปภาพล้มเหลว กรุณาลองใหม่อีกครั้ง");
-        document.getElementById('receipt-upload-placeholder').style.display = 'flex';
-    } finally {
-        document.getElementById('compression-status').style.display = 'none';
+    if (!currentSelectedAttachments || currentSelectedAttachments.length === 0) {
+        grid.style.display = 'none';
+        if (countSpan) countSpan.innerText = '';
+        return;
     }
-});
 
-// Remove receipt preview image
-document.getElementById('btn-remove-receipt').addEventListener('click', (e) => {
-    e.stopPropagation(); // Stop click from triggering parent file picker
-    currentSelectedReceiptBase64 = "";
-    document.getElementById('hist-receipt-file').value = '';
-    document.getElementById('receipt-preview-container').style.display = 'none';
-    document.getElementById('receipt-upload-placeholder').style.display = 'flex';
+    grid.style.display = 'grid';
+    if (countSpan) countSpan.innerText = `(แนบแล้ว ${currentSelectedAttachments.length} ไฟล์)`;
+
+    currentSelectedAttachments.forEach((att, idx) => {
+        let itemHTML = '';
+        const lowerName = (att.name || '').toLowerCase();
+        const isPdf = lowerName.endsWith('.pdf') || att.docType === 'pdf';
+        const sizeStr = att.compressedSize ? formatFileSize(att.compressedSize) : '';
+
+        if (att.thumbnail || att.type === 'image') {
+            const imgSrc = att.thumbnail || att.data;
+            itemHTML = `
+                <div class="attach-item is-image" onclick="openDocumentViewer(currentSelectedAttachments[${idx}], 'ใบเสร็จ / หลักฐาน', '${att.name || ''}')" title="คลิกเพื่อเปิดดู (${att.name || 'รูปภาพ'})">
+                    <img src="${imgSrc}" alt="${att.name || 'รูปภาพ'}">
+                    ${isPdf ? '<span class="pdf-tag-overlay">📕 PDF</span>' : ''}
+                    ${sizeStr ? `<span class="attach-size-badge">${sizeStr}</span>` : ''}
+                    <button type="button" class="btn-remove-attach" onclick="event.stopPropagation(); removeAttachment(${idx});" title="ลบไฟล์นี้">&times;</button>
+                </div>
+            `;
+        } else {
+            let icon = '📄';
+            let desc = 'เอกสาร';
+            if (isPdf) { icon = '📕'; desc = 'PDF'; }
+            else if (lowerName.endsWith('.xls') || lowerName.endsWith('.xlsx') || lowerName.endsWith('.csv')) { icon = '📊'; desc = 'Excel'; }
+            else if (lowerName.endsWith('.doc') || lowerName.endsWith('.docx')) { icon = '📝'; desc = 'Word'; }
+
+            itemHTML = `
+                <div class="attach-item is-doc" onclick="openDocumentViewer(currentSelectedAttachments[${idx}], 'ใบเสร็จ / หลักฐาน', '${att.name || ''}')" style="cursor: pointer;">
+                    <span class="attach-doc-icon">${icon}</span>
+                    <span class="attach-doc-name" title="${att.name}">${att.name}</span>
+                    <span class="attach-doc-type">${desc} ${sizeStr ? `(${sizeStr})` : ''}</span>
+                    <button type="button" class="btn-remove-attach" onclick="event.stopPropagation(); removeAttachment(${idx});" title="ลบไฟล์นี้">&times;</button>
+                </div>
+            `;
+        }
+        grid.insertAdjacentHTML('beforeend', itemHTML);
+    });
+}
+
+window.removeAttachment = function(idx) {
+    if (idx >= 0 && idx < currentSelectedAttachments.length) {
+        currentSelectedAttachments.splice(idx, 1);
+        renderAttachmentsPreview();
+    }
+};
+
+window.zoomImagePreview = function(attId) {
+    const att = currentSelectedAttachments.find(a => a.id === attId);
+    if (att && att.data) {
+        openDocumentViewer(att, 'ดูเอกสารแนบ', att.name);
+    }
+};
+
+// File input change handler for history receipts
+document.getElementById('hist-receipt-file').addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files || []);
+    await processAttachmentFiles(files, currentSelectedAttachments, renderAttachmentsPreview, 'compression-status', 'history');
+    e.target.value = '';
 });
 
 // Save Service History Record
@@ -1482,10 +2121,16 @@ document.getElementById('form-history').addEventListener('submit', (e) => {
     const mechanic = document.getElementById('hist-mechanic').value;
     const notes = document.getElementById('hist-notes').value;
     
-    const part = state.parts.find(p => p.id === partId);
-    if (!part) {
-        alert("กรุณาเลือกรายการอะไหล่");
-        return;
+    let partName = '';
+    if (partId === 'general-repair') {
+        partName = document.getElementById('hist-custom-name').value.trim() || 'งานซ่อมบำรุงทั่วไป';
+    } else {
+        const part = state.parts.find(p => p.id === partId);
+        if (!part) {
+            alert("กรุณาเลือกรายการอะไหล่");
+            return;
+        }
+        partName = part.name;
     }
 
     updateState(() => {
@@ -1496,13 +2141,15 @@ document.getElementById('form-history').addEventListener('submit', (e) => {
                 state.history[idx] = {
                     id,
                     partId,
-                    partName: part.name,
+                    partName,
                     date,
                     mileage,
                     cost,
                     mechanic,
                     notes,
-                    receipt: currentSelectedReceiptBase64
+                    attachments: currentSelectedAttachments,
+                    receipt: currentSelectedAttachments[0]?.data || "",
+                    receiptName: currentSelectedAttachments[0]?.name || ""
                 };
             }
         } else {
@@ -1511,23 +2158,27 @@ document.getElementById('form-history').addEventListener('submit', (e) => {
             state.history.push({
                 id: newHistId,
                 partId,
-                partName: part.name,
+                partName,
                 date,
                 mileage,
                 cost,
                 mechanic,
                 notes,
-                receipt: currentSelectedReceiptBase64
+                attachments: currentSelectedAttachments,
+                receipt: currentSelectedAttachments[0]?.data || "",
+                receiptName: currentSelectedAttachments[0]?.name || ""
             });
         }
 
-        // UPDATE THE PART'S LAST SERVICE RECORD METRICS IMMEDIATELY!
-        const partIdx = state.parts.findIndex(p => p.id === partId);
-        if (partIdx !== -1) {
-            state.parts[partIdx].lastServiceDate = date;
-            // Only update part's last service mileage if user actually specified a value > 0
-            if (mileage > 0) {
-                state.parts[partIdx].lastServiceMileage = mileage;
+        // UPDATE THE PART'S LAST SERVICE RECORD METRICS IMMEDIATELY (if it's a tracked part)
+        if (partId !== 'general-repair') {
+            const partIdx = state.parts.findIndex(p => p.id === partId);
+            if (partIdx !== -1) {
+                state.parts[partIdx].lastServiceDate = date;
+                // Only update part's last service mileage if user actually specified a value > 0
+                if (mileage > 0) {
+                    state.parts[partIdx].lastServiceMileage = mileage;
+                }
             }
         }
 
@@ -1554,16 +2205,582 @@ window.deleteHistoryRecord = function(id) {
     });
 };
 
-// Zoom Receipt Modal Controls
-window.zoomReceipt = function(recordId) {
-    const record = state.history.find(h => h.id === recordId);
-    if (!record || !record.receipt) return;
-    
-    document.getElementById('receipt-zoom-img').src = record.receipt;
+// --- UNIVERSAL DOCUMENT & PDF VIEWER CONTROLS ---
+let currentViewerDoc = null;
+let currentViewerPdfInstance = null;
+let currentViewerPage = 1;
+let currentViewerTotalPages = 1;
+let currentViewerScale = 1.0;
+
+async function openDocumentViewer(att, title = "ดูเอกสารแนบ", meta = "") {
+    if (!att || !att.data) return;
+    currentViewerDoc = att;
+    currentViewerPage = 1;
+    currentViewerScale = 1.0;
+
+    const modalTitle = document.getElementById('doc-viewer-title');
+    const modalMeta = document.getElementById('doc-viewer-meta');
+    const imgEl = document.getElementById('receipt-zoom-img');
+    const canvasEl = document.getElementById('pdf-viewer-canvas');
+    const iframeEl = document.getElementById('doc-viewer-iframe');
+    const pdfControls = document.getElementById('pdf-nav-controls');
+    const zoomText = document.getElementById('zoom-level-text');
+
+    if (modalTitle) modalTitle.innerText = title;
+    if (modalMeta) {
+        const sizeInfo = att.compressedSize ? `ขนาด: ${formatFileSize(att.compressedSize)}` : '';
+        modalMeta.innerText = `${att.name || ''} ${sizeInfo}`;
+    }
+    if (zoomText) zoomText.innerText = '100%';
+
+    const isPdf = (att.name && att.name.toLowerCase().endsWith('.pdf')) || (att.data && att.data.startsWith('data:application/pdf')) || att.docType === 'pdf';
+
+    if (isPdf) {
+        imgEl.style.display = 'none';
+        iframeEl.style.display = 'none';
+        canvasEl.style.display = 'block';
+        if (pdfControls) pdfControls.style.display = 'flex';
+
+        if (window.pdfjsLib) {
+            try {
+                const bytes = dataUriToUint8Array(att.data);
+                const loadingTask = pdfjsLib.getDocument({ data: bytes.buffer });
+                currentViewerPdfInstance = await loadingTask.promise;
+                currentViewerTotalPages = currentViewerPdfInstance.numPages;
+                await renderViewerPdfPage(currentViewerPage);
+            } catch (err) {
+                console.error("PDF viewer render error:", err);
+                canvasEl.style.display = 'none';
+                iframeEl.style.display = 'block';
+                iframeEl.src = att.data;
+                if (pdfControls) pdfControls.style.display = 'none';
+            }
+        } else {
+            canvasEl.style.display = 'none';
+            iframeEl.style.display = 'block';
+            iframeEl.src = att.data;
+            if (pdfControls) pdfControls.style.display = 'none';
+        }
+    } else if (att.type === 'image' || (att.data && att.data.startsWith('data:image/'))) {
+        canvasEl.style.display = 'none';
+        iframeEl.style.display = 'none';
+        if (pdfControls) pdfControls.style.display = 'none';
+        imgEl.style.display = 'block';
+        imgEl.src = att.data;
+        imgEl.style.transform = `scale(1.0)`;
+    } else {
+        // Other docs (iframe view)
+        canvasEl.style.display = 'none';
+        imgEl.style.display = 'none';
+        iframeEl.style.display = 'block';
+        iframeEl.src = att.data;
+        if (pdfControls) pdfControls.style.display = 'none';
+    }
+
     openModal('modal-receipt-view');
+}
+
+async function renderViewerPdfPage(pageNum) {
+    if (!currentViewerPdfInstance) return;
+    const canvas = document.getElementById('pdf-viewer-canvas');
+    if (!canvas) return;
+    const page = await currentViewerPdfInstance.getPage(pageNum);
+    const viewport = page.getViewport({ scale: currentViewerScale * 1.5 });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+
+    const pageInfo = document.getElementById('pdf-page-info');
+    if (pageInfo) pageInfo.innerText = `หน้า ${pageNum} / ${currentViewerTotalPages}`;
+    const zoomText = document.getElementById('zoom-level-text');
+    if (zoomText) zoomText.innerText = `${Math.round(currentViewerScale * 100)}%`;
+}
+
+// Viewer PDF page navigation
+document.getElementById('btn-pdf-prev').addEventListener('click', () => {
+    if (currentViewerPage > 1) {
+        currentViewerPage--;
+        renderViewerPdfPage(currentViewerPage);
+    }
+});
+document.getElementById('btn-pdf-next').addEventListener('click', () => {
+    if (currentViewerPage < currentViewerTotalPages) {
+        currentViewerPage++;
+        renderViewerPdfPage(currentViewerPage);
+    }
+});
+
+// Viewer Zoom controls
+document.getElementById('btn-zoom-in').addEventListener('click', () => {
+    currentViewerScale = Math.min(3.0, currentViewerScale + 0.25);
+    const imgEl = document.getElementById('receipt-zoom-img');
+    const zoomText = document.getElementById('zoom-level-text');
+    if (zoomText) zoomText.innerText = `${Math.round(currentViewerScale * 100)}%`;
+    if (imgEl && imgEl.style.display !== 'none') {
+        imgEl.style.transform = `scale(${currentViewerScale})`;
+    } else {
+        renderViewerPdfPage(currentViewerPage);
+    }
+});
+
+document.getElementById('btn-zoom-out').addEventListener('click', () => {
+    currentViewerScale = Math.max(0.5, currentViewerScale - 0.25);
+    const imgEl = document.getElementById('receipt-zoom-img');
+    const zoomText = document.getElementById('zoom-level-text');
+    if (zoomText) zoomText.innerText = `${Math.round(currentViewerScale * 100)}%`;
+    if (imgEl && imgEl.style.display !== 'none') {
+        imgEl.style.transform = `scale(${currentViewerScale})`;
+    } else {
+        renderViewerPdfPage(currentViewerPage);
+    }
+});
+
+document.getElementById('btn-zoom-reset').addEventListener('click', () => {
+    currentViewerScale = 1.0;
+    const imgEl = document.getElementById('receipt-zoom-img');
+    const zoomText = document.getElementById('zoom-level-text');
+    if (zoomText) zoomText.innerText = '100%';
+    if (imgEl && imgEl.style.display !== 'none') {
+        imgEl.style.transform = `scale(1.0)`;
+    } else {
+        renderViewerPdfPage(currentViewerPage);
+    }
+});
+
+// Viewer Actions: Download, Open in new tab, Recompress
+document.getElementById('btn-doc-download').addEventListener('click', () => {
+    if (!currentViewerDoc || !currentViewerDoc.data) return;
+    const a = document.createElement('a');
+    a.href = currentViewerDoc.data;
+    a.download = currentViewerDoc.name || 'document';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+});
+
+document.getElementById('btn-doc-open-tab').addEventListener('click', () => {
+    if (!currentViewerDoc || !currentViewerDoc.data) return;
+    try {
+        const parts = currentViewerDoc.data.split(',');
+        const mime = parts[0].match(/:(.*?);/)[1];
+        const bytes = dataUriToUint8Array(currentViewerDoc.data);
+        const blob = new Blob([bytes], { type: mime });
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, '_blank');
+    } catch (e) {
+        window.open(currentViewerDoc.data, '_blank');
+    }
+});
+
+document.getElementById('btn-doc-compress-tune').addEventListener('click', () => {
+    if (!currentViewerDoc) return;
+    closeModal('modal-receipt-view');
+    openCompressorHelper(currentViewerDoc, 'viewer');
+});
+
+// Zoom Receipt / Attachment Modal Controls (backward compatible)
+window.zoomAttachment = function(recordId, attachIdx = 0) {
+    const record = state.history.find(h => h.id === recordId);
+    if (!record) return;
+    const attachments = getRecordAttachments(record);
+    const att = attachments[attachIdx];
+    if (att && att.data) {
+        openDocumentViewer(att, record.partName, `ใบเสร็จ วันที่ ${record.date}`);
+    }
 };
+
+window.zoomReceipt = function(recordId) {
+    window.zoomAttachment(recordId, 0);
+};
+
 document.getElementById('btn-close-receipt-zoom').addEventListener('click', () => closeModal('modal-receipt-view'));
 document.getElementById('btn-close-receipt-zoom-footer').addEventListener('click', () => closeModal('modal-receipt-view'));
+
+// Dashboard quick document view
+window.viewQuickDoc = function(partId) {
+    const part = state.parts.find(p => p.id === partId);
+    if (!part) return;
+
+    let docAtt = null;
+    if (part.attachments && part.attachments.length > 0) {
+        docAtt = part.attachments[0];
+    } else {
+        const histRecords = state.history.filter(h => h.partId === part.id);
+        for (const h of histRecords) {
+            const atts = getRecordAttachments(h);
+            if (atts && atts.length > 0) {
+                docAtt = atts[0];
+                break;
+            }
+        }
+    }
+
+    if (docAtt) {
+        openDocumentViewer(docAtt, part.name, `เอกสารกรมธรรม์ / ภาษี`);
+    } else {
+        alert("ไม่พบเอกสารแนบสำหรับรายการนี้");
+    }
+};
+
+// --- PDF & FILE COMPRESSOR HELPER (PDF24 STYLE) CONTROLS ---
+let compHelperCurrentAtt = null;
+let compHelperQuality = 0.70;
+let compHelperMaxDim = 1280;
+let compHelperPage = 1;
+let compHelperTotalPages = 1;
+let compHelperResult = null;
+let compHelperPdfInstance = null;
+
+async function openCompressorHelper(targetAttachment, context = 'standalone') {
+    activeCompressorContext = context;
+    compHelperCurrentAtt = targetAttachment;
+    compHelperPage = 1;
+    compHelperQuality = 0.70;
+    compHelperMaxDim = 1280;
+    compHelperResult = null;
+
+    // Reset preset buttons to Medium (Recommended)
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    const medBtn = document.getElementById('preset-medium');
+    if (medBtn) medBtn.classList.add('active');
+    const qSlider = document.getElementById('compressor-quality-slider');
+    if (qSlider) qSlider.value = 70;
+    const qVal = document.getElementById('compressor-quality-val');
+    if (qVal) qVal.innerText = '70%';
+
+    const standaloneArea = document.getElementById('compressor-standalone-drop');
+    const applyBtn = document.getElementById('btn-apply-compressed');
+
+    if (!targetAttachment) {
+        // Opened without pre-existing attachment
+        if (standaloneArea) standaloneArea.style.display = 'block';
+        if (applyBtn) applyBtn.style.display = 'none';
+        document.getElementById('comp-file-name').innerText = 'ยังไม่ได้เลือกไฟล์';
+        document.getElementById('comp-orig-size').innerText = '-';
+        document.getElementById('comp-new-size').innerText = '-';
+        document.getElementById('comp-savings').innerText = '-';
+        document.getElementById('compressor-preview-canvas').style.display = 'none';
+        document.getElementById('compressor-preview-img').style.display = 'none';
+        document.getElementById('comp-page-nav').style.display = 'none';
+        openModal('modal-compressor-helper');
+        return;
+    }
+
+    if (standaloneArea) standaloneArea.style.display = 'none';
+    if (applyBtn) applyBtn.style.display = (context === 'viewer' || context === 'standalone') ? 'none' : 'inline-block';
+
+    openModal('modal-compressor-helper');
+    await runCompressionInHelper();
+}
+
+async function runCompressionInHelper() {
+    if (!compHelperCurrentAtt || !compHelperCurrentAtt.data) return;
+
+    const spinner = document.getElementById('comp-loading-spinner');
+    const canvas = document.getElementById('compressor-preview-canvas');
+    const imgEl = document.getElementById('compressor-preview-img');
+    const pageNav = document.getElementById('comp-page-nav');
+
+    if (spinner) spinner.style.display = 'block';
+    if (canvas) canvas.style.display = 'none';
+    if (imgEl) imgEl.style.display = 'none';
+
+    document.getElementById('comp-file-name').innerText = compHelperCurrentAtt.name || 'เอกสาร';
+    const origSize = compHelperCurrentAtt.originalSize || Math.round((compHelperCurrentAtt.data.length * 3) / 4);
+    document.getElementById('comp-orig-size').innerText = formatFileSize(origSize);
+
+    const isPdf = (compHelperCurrentAtt.name && compHelperCurrentAtt.name.toLowerCase().endsWith('.pdf')) || (compHelperCurrentAtt.data && compHelperCurrentAtt.data.startsWith('data:application/pdf')) || compHelperCurrentAtt.docType === 'pdf';
+
+    try {
+        if (isPdf) {
+            compHelperResult = await compressPdf(compHelperCurrentAtt.data, {
+                maxDimension: compHelperMaxDim,
+                quality: compHelperQuality
+            });
+            compHelperTotalPages = compHelperResult.pageCount || 1;
+
+            // Load compressed PDF for preview
+            if (window.pdfjsLib) {
+                const bytes = dataUriToUint8Array(compHelperResult.dataUrl);
+                const loadingTask = pdfjsLib.getDocument({ data: bytes.buffer });
+                compHelperPdfInstance = await loadingTask.promise;
+                await renderCompressorHelperPage(compHelperPage);
+            }
+
+            if (pageNav) {
+                pageNav.style.display = compHelperTotalPages > 1 ? 'flex' : 'none';
+                const pageInd = document.getElementById('comp-page-indicator');
+                if (pageInd) pageInd.innerText = `หน้า ${compHelperPage} / ${compHelperTotalPages}`;
+            }
+        } else {
+            // Image
+            compHelperResult = await compressImage(compHelperCurrentAtt.data, {
+                maxDimension: compHelperMaxDim,
+                quality: compHelperQuality
+            });
+            compHelperTotalPages = 1;
+            if (pageNav) pageNav.style.display = 'none';
+
+            if (imgEl) {
+                imgEl.src = compHelperResult.dataUrl;
+                imgEl.style.display = 'block';
+            }
+        }
+
+        document.getElementById('comp-new-size').innerText = formatFileSize(compHelperResult.compressedSize);
+        document.getElementById('comp-savings').innerText = `ลดลง ${compHelperResult.savingsPercent}%`;
+    } catch (err) {
+        console.error("Helper compression error:", err);
+        alert("เกิดข้อผิดพลาดในการบีบอัดเอกสาร: " + err.message);
+    } finally {
+        if (spinner) spinner.style.display = 'none';
+    }
+}
+
+async function renderCompressorHelperPage(pageNum) {
+    if (!compHelperPdfInstance) return;
+    const canvas = document.getElementById('compressor-preview-canvas');
+    if (!canvas) return;
+    const page = await compHelperPdfInstance.getPage(pageNum);
+    const viewport = page.getViewport({ scale: 1.2 });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+    canvas.style.display = 'block';
+
+    const pageInd = document.getElementById('comp-page-indicator');
+    if (pageInd) pageInd.innerText = `หน้า ${pageNum} / ${compHelperTotalPages}`;
+}
+
+// Compressor helper page navigation
+document.getElementById('comp-prev-page').addEventListener('click', async () => {
+    if (compHelperPage > 1) {
+        compHelperPage--;
+        await renderCompressorHelperPage(compHelperPage);
+    }
+});
+document.getElementById('comp-next-page').addEventListener('click', async () => {
+    if (compHelperPage < compHelperTotalPages) {
+        compHelperPage++;
+        await renderCompressorHelperPage(compHelperPage);
+    }
+});
+
+// Compressor Presets
+document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+        document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const preset = btn.dataset.preset;
+        const slider = document.getElementById('compressor-quality-slider');
+        const valSpan = document.getElementById('compressor-quality-val');
+
+        if (preset === 'low') {
+            compHelperMaxDim = 1000;
+            compHelperQuality = 0.55;
+            if (slider) slider.value = 55;
+            if (valSpan) valSpan.innerText = '55%';
+        } else if (preset === 'medium') {
+            compHelperMaxDim = 1280;
+            compHelperQuality = 0.70;
+            if (slider) slider.value = 70;
+            if (valSpan) valSpan.innerText = '70%';
+        } else if (preset === 'high') {
+            compHelperMaxDim = 1600;
+            compHelperQuality = 0.82;
+            if (slider) slider.value = 82;
+            if (valSpan) valSpan.innerText = '82%';
+        }
+
+        await runCompressionInHelper();
+    });
+});
+
+// Compressor Slider & Recompress
+const compSlider = document.getElementById('compressor-quality-slider');
+if (compSlider) {
+    compSlider.addEventListener('input', (e) => {
+        document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+        const qVal = parseInt(e.target.value);
+        compHelperQuality = qVal / 100;
+        document.getElementById('compressor-quality-val').innerText = `${qVal}%`;
+    });
+}
+document.getElementById('btn-recompress').addEventListener('click', () => {
+    runCompressionInHelper();
+});
+
+// Compressor Apply to Active Context
+document.getElementById('btn-apply-compressed').addEventListener('click', () => {
+    if (!compHelperResult || !compHelperCurrentAtt) {
+        closeModal('modal-compressor-helper');
+        return;
+    }
+
+    compHelperCurrentAtt.data = compHelperResult.dataUrl;
+    compHelperCurrentAtt.thumbnail = compHelperResult.thumbnail || compHelperResult.dataUrl;
+    compHelperCurrentAtt.compressedSize = compHelperResult.compressedSize;
+    compHelperCurrentAtt.savingsPercent = compHelperResult.savingsPercent;
+
+    if (activeCompressorContext === 'history') {
+        renderAttachmentsPreview();
+    } else if (activeCompressorContext === 'part') {
+        renderPartAttachmentsPreview();
+    } else if (activeCompressorContext === 'car') {
+        renderCarDocsPreview();
+    }
+
+    closeModal('modal-compressor-helper');
+});
+
+// Compressor Download
+document.getElementById('btn-download-compressed').addEventListener('click', () => {
+    if (!compHelperResult || !compHelperResult.dataUrl) return;
+    const a = document.createElement('a');
+    a.href = compHelperResult.dataUrl;
+    const baseName = compHelperCurrentAtt ? compHelperCurrentAtt.name : 'compressed_document';
+    a.download = `compressed_${baseName}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+});
+
+document.getElementById('btn-close-compressor-helper').addEventListener('click', () => closeModal('modal-compressor-helper'));
+document.getElementById('btn-cancel-compressor-helper').addEventListener('click', () => closeModal('modal-compressor-helper'));
+
+// Standalone drop area inside compressor helper
+const standaloneDropArea = document.getElementById('compressor-standalone-area');
+const standaloneInput = document.getElementById('compressor-standalone-input');
+if (standaloneDropArea && standaloneInput) {
+    standaloneDropArea.addEventListener('click', () => standaloneInput.click());
+    standaloneInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+            compHelperCurrentAtt = {
+                id: 'comp-file-' + Date.now(),
+                name: file.name,
+                data: evt.target.result,
+                originalSize: file.size,
+                type: file.type.startsWith('image/') ? 'image' : 'doc'
+            };
+            document.getElementById('compressor-standalone-drop').style.display = 'none';
+            await runCompressionInHelper();
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+// Quick Compressor Header / Sidebar triggers
+document.getElementById('btn-header-compressor').addEventListener('click', () => {
+    openCompressorHelper(null, 'standalone');
+});
+const btnSidebarCompressor = document.getElementById('btn-sidebar-compressor');
+if (btnSidebarCompressor) {
+    btnSidebarCompressor.addEventListener('click', () => {
+        openCompressorHelper(null, 'standalone');
+    });
+}
+
+// Contextual Helper buttons
+const btnHelperHist = document.getElementById('btn-helper-history');
+if (btnHelperHist) {
+    btnHelperHist.addEventListener('click', () => {
+        const target = currentSelectedAttachments.length > 0 ? currentSelectedAttachments[currentSelectedAttachments.length - 1] : null;
+        openCompressorHelper(target, 'history');
+    });
+}
+const btnHelperPart = document.getElementById('btn-helper-part');
+if (btnHelperPart) {
+    btnHelperPart.addEventListener('click', () => {
+        const target = currentPartAttachments.length > 0 ? currentPartAttachments[currentPartAttachments.length - 1] : null;
+        openCompressorHelper(target, 'part');
+    });
+}
+const btnHelperCar = document.getElementById('btn-helper-car');
+if (btnHelperCar) {
+    btnHelperCar.addEventListener('click', () => {
+        const target = currentCarDocuments.length > 0 ? currentCarDocuments[currentCarDocuments.length - 1] : null;
+        openCompressorHelper(target, 'car');
+    });
+}
+
+// --- CAR DOCUMENTS CONTROLS (SETTINGS MODULE) ---
+const carDocDropZone = document.getElementById('car-doc-drop-zone');
+const carDocFile = document.getElementById('car-doc-file');
+if (carDocDropZone && carDocFile) {
+    carDocDropZone.addEventListener('click', () => carDocFile.click());
+    carDocFile.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files || []);
+        await processAttachmentFiles(files, currentCarDocuments, renderCarDocsPreview, 'car-doc-compression-status', 'car');
+        e.target.value = '';
+    });
+}
+
+function renderCarDocsPreview() {
+    const grid = document.getElementById('car-docs-preview-grid');
+    const countSpan = document.getElementById('car-docs-count');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    if (!currentCarDocuments || currentCarDocuments.length === 0) {
+        grid.style.display = 'none';
+        if (countSpan) countSpan.innerText = '';
+        return;
+    }
+
+    grid.style.display = 'grid';
+    if (countSpan) countSpan.innerText = `(แนบแล้ว ${currentCarDocuments.length} ไฟล์)`;
+
+    currentCarDocuments.forEach((att, idx) => {
+        let itemHTML = '';
+        const lowerName = (att.name || '').toLowerCase();
+        const isPdf = lowerName.endsWith('.pdf') || att.docType === 'pdf';
+        const sizeStr = att.compressedSize ? formatFileSize(att.compressedSize) : '';
+
+        if (att.thumbnail || att.type === 'image') {
+            const imgSrc = att.thumbnail || att.data;
+            itemHTML = `
+                <div class="attach-item is-image" onclick="openDocumentViewer(currentCarDocuments[${idx}], 'เอกสารประจำรถ', '${att.name || ''}')" title="คลิกเพื่อเปิดดู (${att.name || 'เอกสาร'})">
+                    <img src="${imgSrc}" alt="${att.name || 'เอกสาร'}">
+                    ${isPdf ? '<span class="pdf-tag-overlay">📕 PDF</span>' : ''}
+                    ${sizeStr ? `<span class="attach-size-badge">${sizeStr}</span>` : ''}
+                    <button type="button" class="btn-remove-attach" onclick="event.stopPropagation(); removeCarDoc(${idx});" title="ลบไฟล์นี้">&times;</button>
+                </div>
+            `;
+        } else {
+            let icon = '📄';
+            let desc = 'เอกสาร';
+            if (isPdf) { icon = '📕'; desc = 'PDF'; }
+            else if (lowerName.endsWith('.xls') || lowerName.endsWith('.xlsx') || lowerName.endsWith('.csv')) { icon = '📊'; desc = 'Excel'; }
+            else if (lowerName.endsWith('.doc') || lowerName.endsWith('.docx')) { icon = '📝'; desc = 'Word'; }
+
+            itemHTML = `
+                <div class="attach-item is-doc" onclick="openDocumentViewer(currentCarDocuments[${idx}], 'เอกสารประจำรถ', '${att.name || ''}')" style="cursor: pointer;">
+                    <span class="attach-doc-icon">${icon}</span>
+                    <span class="attach-doc-name" title="${att.name}">${att.name}</span>
+                    <span class="attach-doc-type">${desc} ${sizeStr ? `(${sizeStr})` : ''}</span>
+                    <button type="button" class="btn-remove-attach" onclick="event.stopPropagation(); removeCarDoc(${idx});" title="ลบไฟล์นี้">&times;</button>
+                </div>
+            `;
+        }
+        grid.insertAdjacentHTML('beforeend', itemHTML);
+    });
+}
+
+window.removeCarDoc = function(idx) {
+    if (idx >= 0 && idx < currentCarDocuments.length) {
+        currentCarDocuments.splice(idx, 1);
+        renderCarDocsPreview();
+    }
+};
 
 // Mileage Quick Update Form
 document.getElementById('btn-quick-mileage').addEventListener('click', () => {
@@ -1602,6 +2819,7 @@ document.getElementById('form-car-info').addEventListener('submit', (e) => {
         state.car.name = name;
         state.car.plate = plate;
         state.car.mileage = mileage;
+        state.car.documents = currentCarDocuments;
         logMileagePoint(new Date().toISOString().split('T')[0], mileage, true);
     });
     
@@ -1623,6 +2841,22 @@ document.getElementById('tracker-search').addEventListener('input', renderTracke
 document.getElementById('tracker-filter-category').addEventListener('change', renderTracker);
 document.getElementById('history-search').addEventListener('input', renderHistory);
 document.getElementById('history-filter-part').addEventListener('change', renderHistory);
+
+// Dropdown change listener for custom repair logging name
+document.getElementById('hist-part-id').addEventListener('change', (e) => {
+    const val = e.target.value;
+    const customGroup = document.getElementById('hist-custom-name-group');
+    const customInput = document.getElementById('hist-custom-name');
+    if (val === 'general-repair') {
+        customGroup.style.display = 'block';
+        customInput.required = true;
+        customInput.focus();
+    } else {
+        customGroup.style.display = 'none';
+        customInput.required = false;
+        customInput.value = '';
+    }
+});
 
 // Settings - File System Access button click
 document.getElementById('btn-select-local-file').addEventListener('click', () => {

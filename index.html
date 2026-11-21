@@ -13,6 +13,11 @@
     <!-- MSAL for OneDrive Cloud Integration -->
     <script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"></script>
     
+    <!-- PDF.js for rendering PDF pages to Canvas (Mozilla) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- PDF-Lib for generating compact PDFs client-side -->
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.9/dist/pdf-lib.min.js"></script>
+
     <!-- Flatpickr Datepicker CSS (Base + Dark Theme) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
@@ -59,6 +64,10 @@
             </nav>
             
             <div class="sidebar-footer">
+                <button type="button" class="sidebar-compress-btn" id="btn-sidebar-compressor" title="เครื่องมือบีบอัด PDF (สไตล์ PDF24)">
+                    <span class="icon">⚡📕</span>
+                    <span class="text">บีบอัดไฟล์ PDF</span>
+                </button>
                 <div class="sync-badge loading" id="sync-status-badge">
                     <span class="badge-dot"></span>
                     <span class="badge-text" id="sync-status-text">เช็คสถานะการเชื่อมต่อ...</span>
@@ -76,6 +85,9 @@
                 </div>
                 
                 <div class="header-right">
+                    <button type="button" class="btn btn-outline-cyan header-compressor-btn" id="btn-header-compressor" title="เครื่องมือบีบอัด PDF และรูปภาพ (สไตล์ PDF24)">
+                        <span>⚡📕 บีบอัด PDF</span>
+                    </button>
                     <div class="mileage-widget">
                         <div class="mileage-info">
                             <span class="label">เลขไมล์ปัจจุบัน (km)</span>
@@ -243,6 +255,30 @@
                                     <label for="set-car-mileage">เลขไมล์ปัจจุบัน (กิโลเมตร)</label>
                                     <input type="number" id="set-car-mileage" min="0" placeholder="ระบุเลขไมล์ล่าสุด">
                                 </div>
+
+                                <!-- Car Official Documents (Registration book, manual, tax) -->
+                                <div class="form-group" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 12px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                        <label style="margin-bottom: 0;">เอกสารประจำรถ (เล่มทะเบียน / คู่มือ / เอกสารสำคัญ PDF หรือรูปภาพ)</label>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <button type="button" class="btn-text-tool" id="btn-helper-car" title="ปรับระดับการบีบอัด PDF/รูปภาพ">⚙️ ปรับบีบอัด (PDF24)</button>
+                                            <span id="car-docs-count" style="font-size: 0.8rem; color: var(--primary); font-weight: 600;"></span>
+                                        </div>
+                                    </div>
+                                    <div class="receipt-upload-area" id="car-doc-drop-zone">
+                                        <input type="file" id="car-doc-file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt" multiple style="display: none;">
+                                        <div class="upload-placeholder" id="car-doc-upload-placeholder">
+                                            <span class="icon">🚗 📕</span>
+                                            <span class="text">คลิกเพื่อ แนบไฟล์เล่มทะเบียน / คู่มือรถ (PDF หรือรูปภาพ)</span>
+                                            <span class="subtext">ระบบบีบอัดอัตโนมัติ (สไตล์ PDF24) อ่านตัวหนังสือและเลขตัวถังชัดเจน ประหยัดพื้นที่คลาวด์</span>
+                                        </div>
+                                    </div>
+                                    <div class="attachments-preview-grid" id="car-docs-preview-grid" style="display: none;"></div>
+                                    <div class="compression-status-bar" id="car-doc-compression-status" style="display: none;">
+                                        <span class="spinner">⏳</span> กำลังประมวลผลเอกสารประจำรถ...
+                                    </div>
+                                </div>
+
                                 <button type="submit" class="btn btn-primary w-100">บันทึกข้อมูลรถ</button>
                             </form>
                         </div>
@@ -460,6 +496,29 @@
                     </div>
                 </div>
 
+                <!-- Part Documents / Warranty / Spec Upload -->
+                <div class="form-group" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <label style="margin-bottom: 0;">แนบเอกสารกำกับ / กรมธรรม์ / ใบรับประกัน / สเปก (PDF หรือรูปภาพ)</label>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <button type="button" class="btn-text-tool" id="btn-helper-part" title="ปรับระดับการบีบอัด PDF/รูปภาพ">⚙️ ปรับบีบอัด (PDF24)</button>
+                            <span id="part-files-count" style="font-size: 0.8rem; color: var(--primary); font-weight: 600;"></span>
+                        </div>
+                    </div>
+                    <div class="receipt-upload-area" id="part-drop-zone">
+                        <input type="file" id="part-receipt-file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt" multiple style="display: none;">
+                        <div class="upload-placeholder" id="part-upload-placeholder">
+                            <span class="icon">📎 📕</span>
+                            <span class="text">คลิกเพื่อ แนบเอกสารสเปก, ใบรับประกัน หรือไฟล์ PDF กรมธรรม์</span>
+                            <span class="subtext">รองรับ PDF และรูปภาพ พร้อมระบบบีบอัดย่อขนาด (สไตล์ PDF24) อ่านออกคมชัด</span>
+                        </div>
+                    </div>
+                    <div class="attachments-preview-grid" id="part-attachments-preview-grid" style="display: none;"></div>
+                    <div class="compression-status-bar" id="part-compression-status" style="display: none;">
+                        <span class="spinner">⏳</span> กำลังประมวลผลไฟล์...
+                    </div>
+                </div>
+
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" id="btn-cancel-part">ยกเลิก</button>
                     <button type="submit" class="btn btn-primary" id="btn-save-part">บันทึกข้อมูล</button>
@@ -483,6 +542,11 @@
                     <select id="hist-part-id" required>
                         <!-- Loaded dynamically -->
                     </select>
+                </div>
+
+                <div class="form-group" id="hist-custom-name-group" style="display: none;">
+                    <label for="hist-custom-name">ระบุหัวข้องานซ่อม/บริการ *</label>
+                    <input type="text" id="hist-custom-name" placeholder="เช่น ซ่อมกระจกมองข้าง, ตั้งศูนย์ล้อ, ปะยาง">
                 </div>
 
                 <div class="form-row">
@@ -512,23 +576,31 @@
                     <textarea id="hist-notes" rows="2" placeholder="เช่น เปลี่ยนกรองน้ำมันเครื่องยี่ห้อซากุระด้วย"></textarea>
                 </div>
 
-                <!-- Receipt Camera / File Upload with canvas compression -->
+                <!-- Receipt / Multiple Document File Upload -->
                 <div class="form-group">
-                    <label>อัปโหลด/ถ่ายรูปใบเสร็จหลักฐาน (บันทึกเป็นขนาด HD ประหยัดพื้นที่)</label>
-                    <div class="receipt-upload-area" id="receipt-drop-zone">
-                        <input type="file" id="hist-receipt-file" accept="image/*" capture="environment" style="display: none;">
-                        <div class="upload-placeholder" id="receipt-upload-placeholder">
-                            <span class="icon">📸</span>
-                            <span class="text">คลิกเพื่อ ถ่ายภาพ หรือ เลือกรูปจากอัลบั้ม</span>
-                            <span class="subtext">ไฟล์รูปภาพจะถูกบีบอัดเป็นขนาด HD อัตโนมัติ (อ่านตัวอักษรได้ชัดเจน)</span>
-                        </div>
-                        <div class="receipt-preview-container" id="receipt-preview-container" style="display: none;">
-                            <img src="" id="receipt-preview-img" alt="Receipt Preview">
-                            <button type="button" class="btn-remove-image" id="btn-remove-receipt" title="ลบภาพ">&times;</button>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <label style="margin-bottom: 0;">แนบรูปภาพใบเสร็จ หรือไฟล์เอกสาร PDF (แนบได้หลายไฟล์)</label>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <button type="button" class="btn-text-tool" id="btn-helper-history" title="ปรับระดับการบีบอัด PDF/รูปภาพ">⚙️ ปรับบีบอัด (PDF24)</button>
+                            <span id="hist-files-count" style="font-size: 0.8rem; color: var(--primary); font-weight: 600;"></span>
                         </div>
                     </div>
+                    <div class="receipt-upload-area" id="receipt-drop-zone">
+                        <input type="file" id="hist-receipt-file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt" multiple style="display: none;">
+                        <div class="upload-placeholder" id="receipt-upload-placeholder">
+                            <span class="icon">📷 📕</span>
+                            <span class="text">คลิกเพื่อ ถ่ายภาพ / เลือกรูป หรือแนบไฟล์เอกสาร PDF ใบเสร็จ</span>
+                            <span class="subtext">มีระบบบีบอัดอัจฉริยะ (สไตล์ PDF24) ย่อไฟล์เล็กลง 90%+ แต่อ่านตัวเลขคมชัด ประหยัดพื้นที่คลาวด์</span>
+                        </div>
+                    </div>
+
+                    <!-- Multiple Files Preview Grid -->
+                    <div class="attachments-preview-grid" id="attachments-preview-grid" style="display: none;">
+                        <!-- Items rendered dynamically -->
+                    </div>
+
                     <div class="compression-status-bar" id="compression-status" style="display: none;">
-                        <span class="spinner">⏳</span> กำลังบีบอัดรูปภาพให้เหมาะสม...
+                        <span class="spinner">⏳</span> กำลังประมวลผลไฟล์...
                     </div>
                 </div>
 
@@ -540,18 +612,161 @@
         </div>
     </div>
 
-    <!-- MODAL 3: VIEW COMPRESSED RECEIPT DETAILED (ZOOM IN) -->
+    <!-- MODAL 3: UNIVERSAL DOCUMENT / RECEIPT / PDF VIEWER -->
     <div class="modal-overlay" id="modal-receipt-view">
         <div class="modal-box glass-card receipt-zoom-box">
             <div class="modal-header">
-                <h3>รูปใบเสร็จชำระเงิน</h3>
+                <div>
+                    <h3 id="doc-viewer-title">ดูเอกสารแนบ / ใบเสร็จ</h3>
+                    <span id="doc-viewer-meta" style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-top: 2px;"></span>
+                </div>
                 <button class="btn-close-modal" id="btn-close-receipt-zoom">&times;</button>
             </div>
-            <div class="zoom-image-container">
-                <img src="" id="receipt-zoom-img" alt="Zoomed Receipt">
+
+            <!-- Viewer Controls Toolbar -->
+            <div class="doc-viewer-toolbar" id="doc-viewer-toolbar">
+                <div class="toolbar-left" id="pdf-nav-controls" style="display: none;">
+                    <button type="button" class="btn btn-xs btn-secondary" id="btn-pdf-prev">◀ ก่อนหน้า</button>
+                    <span id="pdf-page-info" style="font-size: 0.85rem; font-weight: 600; padding: 0 6px;">หน้า 1 / 1</span>
+                    <button type="button" class="btn btn-xs btn-secondary" id="btn-pdf-next">ถัดไป ▶</button>
+                </div>
+                <div class="toolbar-right">
+                    <button type="button" class="btn btn-xs btn-secondary" id="btn-zoom-out" title="ย่อขนาด">🔍 -</button>
+                    <span id="zoom-level-text" style="font-size: 0.8rem; min-width: 45px; text-align: center;">100%</span>
+                    <button type="button" class="btn btn-xs btn-secondary" id="btn-zoom-in" title="ขยายขนาด">🔍 +</button>
+                    <button type="button" class="btn btn-xs btn-secondary" id="btn-zoom-reset" title="ขนาดพอดีหน้าจอ">พอดีจอ</button>
+                </div>
             </div>
-            <div class="modal-footer justify-center">
+
+            <!-- Viewer Display Area -->
+            <div class="zoom-image-container" id="doc-viewer-container">
+                <!-- Image View -->
+                <img src="" id="receipt-zoom-img" alt="Document" style="display: none;">
+                <!-- PDF Canvas View -->
+                <canvas id="pdf-viewer-canvas" style="display: none;"></canvas>
+                <!-- Iframe / Embed Fallback View -->
+                <iframe id="doc-viewer-iframe" style="display: none; width: 100%; height: 500px; border: none; border-radius: var(--border-radius-md);"></iframe>
+            </div>
+
+            <div class="modal-footer" style="justify-content: space-between;">
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-sm btn-outline-cyan" id="btn-doc-download">📥 ดาวน์โหลด</button>
+                    <button type="button" class="btn btn-sm btn-secondary" id="btn-doc-open-tab">↗️ เปิดแท็บใหม่</button>
+                    <button type="button" class="btn btn-sm btn-secondary" id="btn-doc-compress-tune">⚙️ ปรับบีบอัด (PDF24)</button>
+                </div>
                 <button class="btn btn-secondary" id="btn-close-receipt-zoom-footer">ปิดหน้าต่าง</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 3.5: PDF & FILE COMPRESSOR HELPER (PDF24 STYLE) -->
+    <div class="modal-overlay" id="modal-compressor-helper">
+        <div class="modal-box glass-card compressor-helper-box">
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.6rem;">⚡📕</span>
+                    <div>
+                        <h3 style="margin-bottom: 2px;">ตัวช่วยปรับขนาดและบีบอัด PDF (PDF24 Style)</h3>
+                        <span style="font-size: 0.8rem; color: var(--text-muted);">ปรับความละเอียดและคุณภาพให้ไฟล์เล็กลง แต่อ่านตัวเลขและตัวหนังสือออกคมชัด</span>
+                    </div>
+                </div>
+                <button class="btn-close-modal" id="btn-close-compressor-helper">&times;</button>
+            </div>
+            
+            <div class="compressor-content">
+                <!-- Standalone file drop zone if opened without pre-selected file -->
+                <div class="compressor-standalone-drop" id="compressor-standalone-drop" style="display: none;">
+                    <input type="file" id="compressor-standalone-input" accept="image/*,.pdf" style="display: none;">
+                    <div class="receipt-upload-area" id="compressor-standalone-area" style="padding: 20px; text-align: center; cursor: pointer;">
+                        <span style="font-size: 2rem; display: block; margin-bottom: 8px;">📂 📕</span>
+                        <span style="font-weight: 600; color: var(--primary);">คลิก หรือ ลากไฟล์ PDF / รูปภาพ มาวางที่นี่</span>
+                        <span style="display: block; font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">รองรับทั้งไฟล์เอกสาร PDF หลายหน้า หรือรูปถ่ายใบเสร็จ</span>
+                    </div>
+                </div>
+
+                <!-- Stats Bar -->
+                <div class="compressor-stats-row">
+                    <div class="compressor-stat">
+                        <span class="stat-lbl">ชื่อไฟล์:</span>
+                        <span class="stat-val" id="comp-file-name">-</span>
+                    </div>
+                    <div class="compressor-stat">
+                        <span class="stat-lbl">ขนาดต้นฉบับ:</span>
+                        <span class="stat-val" id="comp-orig-size">-</span>
+                    </div>
+                    <div class="compressor-stat">
+                        <span class="stat-lbl">ขนาดหลังบีบอัด:</span>
+                        <span class="stat-val text-success" id="comp-new-size">-</span>
+                    </div>
+                    <div class="compressor-stat">
+                        <span class="stat-lbl">ประหยัดพื้นที่:</span>
+                        <span class="stat-val text-cyan" id="comp-savings">-</span>
+                    </div>
+                </div>
+
+                <!-- Controls: Presets -->
+                <div class="compressor-settings-card">
+                    <label style="font-weight: 600; margin-bottom: 8px; display: block; font-size: 0.9rem;">เลือกระดับการบีบอัด (Compression Preset):</label>
+                    <div class="preset-buttons-row">
+                        <button type="button" class="preset-btn" data-preset="low" id="preset-low">
+                            <span class="preset-title">⚡ ประหยัดพื้นที่สูงสุด</span>
+                            <span class="preset-desc">DPI ต่ำ (~1000px, 55%) ขนาดเล็ก ~40-70KB/หน้า</span>
+                        </button>
+                        <button type="button" class="preset-btn active" data-preset="medium" id="preset-medium">
+                            <span class="preset-title">⭐ แนะนำ: คมชัดประหยัดพื้นที่</span>
+                            <span class="preset-desc">HD (~1280px, 70%) อ่านตัวหนังสือชัดเจน ขนาด ~80-120KB/หน้า</span>
+                        </button>
+                        <button type="button" class="preset-btn" data-preset="high" id="preset-high">
+                            <span class="preset-title">🔍 ความคมชัดสูง</span>
+                            <span class="preset-desc">DPI สูง (~1600px, 82%) ตารางและตัวอักษรจิ๋วคมชัดมาก</span>
+                        </button>
+                    </div>
+
+                    <div class="compression-slider-row">
+                        <label for="compressor-quality-slider" style="margin-bottom:0; font-size: 0.85rem; color: var(--text-muted); min-width: 90px;">ปรับคุณภาพเอง:</label>
+                        <input type="range" id="compressor-quality-slider" min="40" max="95" value="70" style="flex: 1;">
+                        <span id="compressor-quality-val" style="font-weight: 700; color: var(--primary); min-width: 45px; text-align: right;">70%</span>
+                        <button type="button" class="btn btn-xs btn-secondary" id="btn-recompress">🔄 ประมวลผลใหม่</button>
+                    </div>
+                </div>
+
+                <!-- Interactive Legibility Preview -->
+                <div class="compressor-preview-box">
+                    <div class="preview-header">
+                        <span style="font-weight: 600; font-size: 0.85rem;">🔍 พรีวิวตรวจสอบความคมชัด (ตัวหนังสือต้องอ่านออกชัดเจน):</span>
+                        <div class="pdf-page-nav" id="comp-page-nav" style="display: none;">
+                            <button type="button" class="btn btn-xs btn-secondary" id="comp-prev-page">◀ ก่อนหน้า</button>
+                            <span id="comp-page-indicator" style="font-size: 0.8rem; font-weight: 600;">หน้า 1 / 1</span>
+                            <button type="button" class="btn btn-xs btn-secondary" id="comp-next-page">ถัดไป ▶</button>
+                        </div>
+                    </div>
+                    <div class="preview-canvas-wrapper" id="compressor-canvas-wrapper">
+                        <canvas id="compressor-preview-canvas"></canvas>
+                        <img id="compressor-preview-img" style="display: none; max-width: 100%; border-radius: 4px;" alt="Preview">
+                        <div id="comp-loading-spinner" style="display: none; padding: 30px; text-align: center; color: var(--primary);">
+                            <span class="spinner">⏳</span> กำลังประมวลผลบีบอัดเอกสาร...
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PDF24 External Link Banner -->
+                <div class="pdf24-banner">
+                    <span class="pdf24-icon">💡</span>
+                    <div class="pdf24-text">
+                        <strong>ต้องการบีบอัดด้วยเครื่องมือ PDF24 ภายนอก?</strong> หากคุณต้องการใช้เครื่องมือบนคลาวด์ของ PDF24 โดยตรง สามารถคลิกเพื่อเปิดใช้งานได้ฟรี
+                    </div>
+                    <a href="https://tools.pdf24.org/th/compress-pdf" target="_blank" rel="noopener noreferrer" class="btn btn-xs btn-secondary" style="white-space: nowrap;">
+                        เปิด PDF24 Compress ↗
+                    </a>
+                </div>
+            </div>
+
+            <div class="modal-footer" style="justify-content: space-between;">
+                <button type="button" class="btn btn-outline-cyan" id="btn-download-compressed">📥 ดาวน์โหลดไฟล์บีบอัด</button>
+                <div style="display: flex; gap: 8px;">
+                    <button type="button" class="btn btn-secondary" id="btn-cancel-compressor-helper">ยกเลิก</button>
+                    <button type="button" class="btn btn-primary" id="btn-apply-compressed">✅ นำไฟล์ไปใช้งาน</button>
+                </div>
             </div>
         </div>
     </div>
