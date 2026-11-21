@@ -3122,9 +3122,12 @@ if (standaloneDropArea && standaloneInput) {
 }
 
 // Quick Compressor Header / Sidebar triggers
-document.getElementById('btn-header-compressor').addEventListener('click', () => {
-    openCompressorHelper(null, 'standalone');
-});
+const btnHeaderCompressor = document.getElementById('btn-header-compressor');
+if (btnHeaderCompressor) {
+    btnHeaderCompressor.addEventListener('click', () => {
+        openCompressorHelper(null, 'standalone');
+    });
+}
 const btnSidebarCompressor = document.getElementById('btn-sidebar-compressor');
 if (btnSidebarCompressor) {
     btnSidebarCompressor.addEventListener('click', () => {
