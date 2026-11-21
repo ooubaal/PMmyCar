@@ -111,71 +111,162 @@
                 
                 <!-- DASHBOARD TAB -->
                 <section class="tab-pane active" id="tab-dashboard">
-                    <!-- Status Cards Grid -->
-                    <div class="stats-grid">
-                        <div class="stat-card urgent">
+                    <!-- Status Cards Grid: 4 Metric Cards -->
+                    <div class="stats-grid dashboard-top-stats">
+                        <div class="stat-card urgent clickable" id="stat-card-overdue" title="คลิกเพื่อดูรายการที่ต้องดูแล">
                             <div class="stat-icon">⚠️</div>
                             <div class="stat-detail">
                                 <span class="stat-val" id="count-overdue">0</span>
                                 <span class="stat-lbl">ต้องเปลี่ยนทันที (Overdue)</span>
                             </div>
                         </div>
-                        <div class="stat-card warning">
+                        <div class="stat-card warning clickable" id="stat-card-warning" title="คลิกเพื่อดูรายการใกล้ครบกำหนด">
                             <div class="stat-icon">🔔</div>
                             <div class="stat-detail">
                                 <span class="stat-val" id="count-warning">0</span>
                                 <span class="stat-lbl">ใกล้ครบกำหนด (Due Soon)</span>
                             </div>
                         </div>
-                        <div class="stat-card healthy">
+                        <div class="stat-card healthy clickable" id="stat-card-healthy" title="คลิกเพื่อดูอะไหล่ทั้งหมด">
                             <div class="stat-icon">✅</div>
                             <div class="stat-detail">
                                 <span class="stat-val" id="count-healthy">0</span>
                                 <span class="stat-lbl">สถานะปกติ (Healthy)</span>
                             </div>
                         </div>
+                        <div class="stat-card cost-card clickable" id="stat-card-cost" title="คลิกเพื่อดูประวัติและค่าใช้จ่าย">
+                            <div class="stat-icon">💰</div>
+                            <div class="stat-detail">
+                                <span class="stat-val" id="stat-total-spending">฿0</span>
+                                <span class="stat-lbl">ค่าบำรุงรักษาสะสม</span>
+                            </div>
+                        </div>
                     </div>
 
-                    <!-- Layout: Car Status Circle Visual & Urgent Items -->
-                    <div class="dashboard-layout">
-                        <!-- Car Status Visualizer -->
-                        <div class="glass-card car-status-card">
-                            <h3>สรุปสุขภาพรถของคุณ</h3>
-                            <div class="status-gauge-container">
-                                <svg class="status-gauge" viewBox="0 0 120 120">
-                                    <circle class="gauge-bg" cx="60" cy="60" r="50"></circle>
-                                    <circle class="gauge-fill" id="gauge-health-fill" cx="60" cy="60" r="50" stroke-dasharray="314" stroke-dashoffset="314"></circle>
-                                </svg>
-                                <div class="gauge-text">
-                                    <span class="gauge-percent" id="health-percent">100%</span>
-                                    <span class="gauge-lbl">สุขภาพโดยรวม</span>
+                    <!-- Main Dashboard 2-Column Grid -->
+                    <div class="dashboard-grid-main">
+                        
+                        <!-- LEFT COLUMN: Readiness & Spending Overview -->
+                        <div class="dashboard-col">
+                            
+                            <!-- Card 1: Vehicle Health & Readiness Hub -->
+                            <div class="glass-card car-status-card" id="card-vehicle-readiness">
+                                <div class="card-header" style="width: 100%; margin-bottom: 8px;">
+                                    <h3>🚗 ความพร้อมใช้งานของรถ</h3>
+                                    <span id="readiness-summary-tag" class="status-tag tag-healthy">คำนวณสถานะ...</span>
+                                </div>
+
+                                <div class="readiness-gauge-row">
+                                    <div class="status-gauge-container">
+                                        <svg class="status-gauge" viewBox="0 0 120 120">
+                                            <circle class="gauge-bg" cx="60" cy="60" r="50"></circle>
+                                            <circle class="gauge-fill" id="gauge-health-fill" cx="60" cy="60" r="50" stroke-dasharray="314" stroke-dashoffset="314"></circle>
+                                        </svg>
+                                        <div class="gauge-text">
+                                            <span class="gauge-percent" id="health-percent">100%</span>
+                                            <span class="gauge-lbl" id="health-percent-lbl">ความพร้อม</span>
+                                        </div>
+                                    </div>
+                                    <div class="readiness-info-col">
+                                        <div id="badge-readiness-desc" class="badge-readiness ready-green">
+                                            ✅ สภาพสมบูรณ์พร้อมเดินทาง 100%
+                                        </div>
+                                        <div class="readiness-subtext" id="readiness-detailed-subtext">
+                                            อะไหล่ทุกรายการได้รับการดูแลตามกำหนด
+                                        </div>
+                                        
+                                        <!-- Lifecycle Spectrum Bar -->
+                                        <div class="lifecycle-spectrum-container">
+                                            <div class="lifecycle-spectrum-bar">
+                                                <div class="spectrum-segment seg-healthy" id="spectrum-healthy" style="width: 100%;" title="ปกติ"></div>
+                                                <div class="spectrum-segment seg-warning" id="spectrum-warning" style="width: 0%;" title="ใกล้ครบกำหนด"></div>
+                                                <div class="spectrum-segment seg-overdue" id="spectrum-overdue" style="width: 0%;" title="เลยกำหนด"></div>
+                                            </div>
+                                            <div class="spectrum-legend">
+                                                <span class="spectrum-legend-item"><span class="legend-dot dot-healthy"></span> ปกติ <strong id="legend-count-healthy">0</strong></span>
+                                                <span class="spectrum-legend-item"><span class="legend-dot dot-warning"></span> ใกล้ครบ <strong id="legend-count-warning">0</strong></span>
+                                                <span class="spectrum-legend-item"><span class="legend-dot dot-overdue"></span> เลยกำหนด <strong id="legend-count-overdue">0</strong></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Key Vehicle Official Documents -->
+                                <div class="car-summary-details">
+                                    <div class="detail-row">
+                                        <span>🛡️ ประกันภัยรถยนต์:</span>
+                                        <div style="display: flex; align-items: center; gap: 6px;">
+                                            <span id="summary-insurance" class="status-tag tag-healthy">ตรวจสอบข้อมูล...</span>
+                                        </div>
+                                    </div>
+                                    <div class="detail-row">
+                                        <span>📄 พรบ. และภาษี:</span>
+                                        <div style="display: flex; align-items: center; gap: 6px;">
+                                            <span id="summary-tax" class="status-tag tag-healthy">ตรวจสอบข้อมูล...</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="car-summary-details">
-                                <div class="detail-row">
-                                    <span>ประกันภัยรถยนต์:</span>
-                                    <span id="summary-insurance" class="status-tag tag-healthy">ตรวจสอบข้อมูล...</span>
+
+                            <!-- Card 2: Recent Maintenance & Cost Activity -->
+                            <div class="glass-card" id="card-recent-activity">
+                                <div class="card-header">
+                                    <h3>🧾 ประวัติการซ่อมบำรุงล่าสุด</h3>
+                                    <button class="btn btn-sm btn-text" id="btn-goto-history">ดูทั้งหมด &rarr;</button>
                                 </div>
-                                <div class="detail-row">
-                                    <span>พรบ. และภาษี:</span>
-                                    <span id="summary-tax" class="status-tag tag-healthy">ตรวจสอบข้อมูล...</span>
+                                
+                                <div class="recent-history-list" id="dashboard-recent-history-list">
+                                    <!-- Rendered dynamically -->
+                                </div>
+
+                                <div style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 14px;">
+                                    <span style="font-size: 0.85rem; color: var(--text-muted);">มีประวัติทั้งหมด <strong id="dash-hist-total-count" style="color: var(--primary);">0</strong> ครั้ง</span>
+                                    <button type="button" class="btn btn-sm btn-secondary" id="btn-dash-add-history" style="font-size: 0.8rem; padding: 6px 14px;">
+                                        ➕ บันทึกซ่อมบำรุง
+                                    </button>
                                 </div>
                             </div>
+
                         </div>
 
-                        <!-- Urgent Items List -->
-                        <div class="glass-card alert-list-card">
-                            <div class="card-header">
-                                <h3>รายการที่ต้องดูแลเร่งด่วน</h3>
-                                <button class="btn btn-sm btn-text" id="btn-goto-tracker">จัดการทั้งหมด &rarr;</button>
-                            </div>
-                            <div class="alert-list" id="urgent-items-list">
-                                <div class="empty-state">
-                                    <span class="icon">🎉</span>
-                                    <p>รถของคุณอยู่ในสภาพสมบูรณ์ ไม่มีอะไหล่ครบกำหนดเปลี่ยน!</p>
+                        <!-- RIGHT COLUMN: Urgent Actions & Upcoming Forecast -->
+                        <div class="dashboard-col">
+                            
+                            <!-- Card 3: Urgent Items List -->
+                            <div class="glass-card alert-list-card" id="card-urgent-actions">
+                                <div class="card-header">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <h3>⚠️ รายการที่ต้องดูแลเร่งด่วน</h3>
+                                        <span class="badge-urgent-count" id="badge-urgent-total-count" style="display: none;">0</span>
+                                    </div>
+                                    <button class="btn btn-sm btn-text" id="btn-goto-tracker">จัดการอะไหล่ทั้งหมด &rarr;</button>
+                                </div>
+                                <div class="alert-list" id="urgent-items-list">
+                                    <div class="empty-state">
+                                        <span class="icon">🎉</span>
+                                        <p>รถของคุณอยู่ในสภาพสมบูรณ์ ไม่มีอะไหล่ครบกำหนดเปลี่ยน!</p>
+                                    </div>
                                 </div>
                             </div>
+
+                            <!-- Card 4: Upcoming Maintenance Forecast & Timeline -->
+                            <div class="glass-card" id="card-upcoming-forecast">
+                                <div class="card-header">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <h3>🔮 คาดการณ์กำหนดการเช็คระยะถัดไป</h3>
+                                    </div>
+                                    <span style="font-size: 0.75rem; color: var(--primary); background: rgba(0, 242, 254, 0.08); border: 1px solid rgba(0, 242, 254, 0.2); border-radius: 4px; padding: 2px 8px;">เรียงตามลำดับใกล้ถึง</span>
+                                </div>
+                                <div class="upcoming-forecast-list" id="dashboard-upcoming-list">
+                                    <!-- Rendered dynamically -->
+                                </div>
+                                <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 14px; text-align: center; line-height: 1.4;">
+                                    💡 ทำนายจากอัตราการวิ่งเฉลี่ย <strong id="dash-upcoming-avg-rate" style="color: var(--primary);">30.0</strong> กม./วัน เพื่อให้คุณวางแผนงบประมาณและเวลาเข้าศูนย์ล่วงหน้า
+                                </p>
+                            </div>
+
                         </div>
+
                     </div>
                 </section>
 

@@ -1494,14 +1494,20 @@ function calculatePartStatus(part, currentMileage) {
     };
 }
 
-// Calculate total overall health of the car
+// Calculate total readiness/health score of the vehicle based on PM maintenance compliance
 function getCarOverallHealth() {
-    if (state.parts.length === 0) return 100;
+    if (!state.parts || state.parts.length === 0) return 100;
     
     let totalScore = 0;
     state.parts.forEach(part => {
         const calc = calculatePartStatus(part, state.car.mileage);
-        totalScore += calc.percent * 100;
+        if (calc.status === 'healthy') {
+            totalScore += 100; // In-spec and fully functional
+        } else if (calc.status === 'warning') {
+            totalScore += 75;  // Approaching service interval (within 30 days or 1,000 km)
+        } else {
+            totalScore += 0;   // Overdue (needs service)
+        }
     });
     
     return Math.round(totalScore / state.parts.length);
@@ -1572,6 +1578,7 @@ function renderDashboard() {
     urgentListContainer.innerHTML = '';
     
     const urgentItems = [];
+    const upcomingCandidates = [];
 
     state.parts.forEach(part => {
         const analysis = calculatePartStatus(part, state.car.mileage);
@@ -1583,44 +1590,117 @@ function renderDashboard() {
             urgentItems.push({ part, analysis });
         } else {
             healthyCount++;
+            upcomingCandidates.push({ part, analysis });
         }
     });
 
-    // Sort urgent items (overdue first, then lower percentage first)
+    // Sort urgent items (overdue first, then lowest percentage remaining first)
     urgentItems.sort((a, b) => {
         if (a.analysis.status === 'overdue' && b.analysis.status !== 'overdue') return -1;
         if (a.analysis.status !== 'overdue' && b.analysis.status === 'overdue') return 1;
         return a.analysis.percent - b.analysis.percent;
     });
 
+    // 1. Top Stat Cards
     document.getElementById('count-overdue').innerText = overdueCount;
     document.getElementById('count-warning').innerText = warningCount;
     document.getElementById('count-healthy').innerText = healthyCount;
 
-    // Render health gauge circle SVG
-    const overallHealth = getCarOverallHealth();
-    document.getElementById('health-percent').innerText = `${overallHealth}%`;
-    const dashOffset = 314 - (314 * overallHealth / 100);
-    const fillGauge = document.getElementById('gauge-health-fill');
-    fillGauge.setAttribute('stroke-dashoffset', dashOffset);
-    
-    // Adjust health gauge color dynamically
-    if (overallHealth > 75) {
-        fillGauge.style.stroke = "var(--success)";
-    } else if (overallHealth > 40) {
-        fillGauge.style.stroke = "var(--warning)";
-    } else {
-        fillGauge.style.stroke = "var(--danger)";
+    const totalSpending = (state.history || []).reduce((sum, h) => sum + (parseFloat(h.cost) || 0), 0);
+    const spendingElem = document.getElementById('stat-total-spending');
+    if (spendingElem) {
+        spendingElem.innerText = totalSpending > 0 ? `฿${totalSpending.toLocaleString('th-TH')}` : '฿0';
     }
 
-    // Quick documents summary on dashboard side card
+    // 2. Vehicle PM Readiness Index & Gauge
+    const readiness = getCarOverallHealth();
+    document.getElementById('health-percent').innerText = `${readiness}%`;
+    const dashOffset = 314 - (314 * readiness / 100);
+    const fillGauge = document.getElementById('gauge-health-fill');
+    fillGauge.setAttribute('stroke-dashoffset', dashOffset);
+
+    const readinessTag = document.getElementById('readiness-summary-tag');
+    const badgeDesc = document.getElementById('badge-readiness-desc');
+    const detailedSubtext = document.getElementById('readiness-detailed-subtext');
+
+    if (overdueCount === 0 && warningCount === 0) {
+        fillGauge.style.stroke = "var(--success)";
+        if (readinessTag) {
+            readinessTag.className = "status-tag tag-healthy";
+            readinessTag.innerText = "พร้อมใช้งาน 100%";
+        }
+        if (badgeDesc) {
+            badgeDesc.className = "badge-readiness ready-green";
+            badgeDesc.innerHTML = "✅ สภาพสมบูรณ์พร้อมเดินทาง 100%";
+        }
+        if (detailedSubtext) {
+            detailedSubtext.innerText = `อะไหล่ทุกรายการ (${healthyCount} ชิ้น) ได้รับการดูแลตามกำหนด`;
+        }
+    } else if (overdueCount === 0 && warningCount > 0) {
+        fillGauge.style.stroke = "var(--warning)";
+        if (readinessTag) {
+            readinessTag.className = "status-tag tag-warning";
+            readinessTag.innerText = `ใกล้ถึงรอบ (${warningCount})`;
+        }
+        if (badgeDesc) {
+            badgeDesc.className = "badge-readiness ready-orange";
+            badgeDesc.innerHTML = `🔔 มี ${warningCount} รายการใกล้ครบกำหนด (ความพร้อม ${readiness}%)`;
+        }
+        if (detailedSubtext) {
+            detailedSubtext.innerText = `แนะนำวางแผนเข้ารับบริการในเร็วๆ นี้สำหรับรายการที่ใกล้ถึงกำหนด`;
+        }
+    } else {
+        fillGauge.style.stroke = "var(--danger)";
+        if (readinessTag) {
+            readinessTag.className = "status-tag tag-overdue";
+            readinessTag.innerText = `ต้องดูแลเร่งด่วน (${overdueCount})`;
+        }
+        if (badgeDesc) {
+            badgeDesc.className = "badge-readiness ready-red";
+            badgeDesc.innerHTML = `⚠️ มี ${overdueCount} รายการเลยกำหนด (ความพร้อม ${readiness}%)`;
+        }
+        if (detailedSubtext) {
+            detailedSubtext.innerText = `อะไหล่ส่วนใหญ่ (${healthyCount}/${state.parts.length}) ยังอยู่ในเกณฑ์ปกติ แต่ควรเปลี่ยนรายการที่เลยกำหนดโดยเร็ว`;
+        }
+    }
+
+    // 3. Lifecycle Spectrum Bar
+    const totalParts = Math.max(1, state.parts.length);
+    const pHealthy = Math.round((healthyCount / totalParts) * 100);
+    const pWarning = Math.round((warningCount / totalParts) * 100);
+    const pOverdue = Math.max(0, 100 - pHealthy - pWarning);
+
+    const specHealthy = document.getElementById('spectrum-healthy');
+    const specWarning = document.getElementById('spectrum-warning');
+    const specOverdue = document.getElementById('spectrum-overdue');
+    if (specHealthy) specHealthy.style.width = `${pHealthy}%`;
+    if (specWarning) specWarning.style.width = `${pWarning}%`;
+    if (specOverdue) specOverdue.style.width = `${pOverdue}%`;
+
+    const legH = document.getElementById('legend-count-healthy');
+    const legW = document.getElementById('legend-count-warning');
+    const legO = document.getElementById('legend-count-overdue');
+    if (legH) legH.innerText = healthyCount;
+    if (legW) legW.innerText = warningCount;
+    if (legO) legO.innerText = overdueCount;
+
+    // 4. Quick Documents Summary (Insurance & Tax)
     const insurancePart = state.parts.find(p => p.category === 'documents' && p.name.includes('ประกัน'));
     const taxPart = state.parts.find(p => p.category === 'documents' && (p.name.includes('ภาษี') || p.name.includes('พรบ')));
-
     updateDocumentSummaryText('summary-insurance', insurancePart);
     updateDocumentSummaryText('summary-tax', taxPart);
 
-    // Render Urgent Items List
+    // 5. Urgent Items List
+    const badgeUrgentCount = document.getElementById('badge-urgent-total-count');
+    if (badgeUrgentCount) {
+        if (urgentItems.length > 0) {
+            badgeUrgentCount.style.display = 'inline-block';
+            badgeUrgentCount.innerText = urgentItems.length;
+        } else {
+            badgeUrgentCount.style.display = 'none';
+        }
+    }
+
     if (urgentItems.length === 0) {
         urgentListContainer.innerHTML = `
             <div class="empty-state">
@@ -1648,6 +1728,104 @@ function renderDashboard() {
             `;
             urgentListContainer.insertAdjacentHTML('beforeend', itemHTML);
         });
+    }
+
+    // 6. Upcoming Maintenance Forecast & Timeline (Top 4 closest due healthy parts)
+    const upcomingContainer = document.getElementById('dashboard-upcoming-list');
+    const upcomingAvgRate = document.getElementById('dash-upcoming-avg-rate');
+    const avgDailyKm = calculateAverageDailyKm();
+    if (upcomingAvgRate) upcomingAvgRate.innerText = avgDailyKm.toFixed(1);
+
+    if (upcomingContainer) {
+        upcomingContainer.innerHTML = '';
+        if (upcomingCandidates.length === 0) {
+            upcomingContainer.innerHTML = `
+                <div class="empty-state" style="padding: 16px;">
+                    <p style="font-size: 0.85rem; color: var(--text-muted);">ไม่มีรายการอะไหล่ในระบบ</p>
+                </div>
+            `;
+        } else {
+            // Sort by nearest predicted / next due date
+            upcomingCandidates.sort((a, b) => {
+                const dateA = a.analysis.nextDueDate ? new Date(a.analysis.nextDueDate).getTime() : Infinity;
+                const dateB = b.analysis.nextDueDate ? new Date(b.analysis.nextDueDate).getTime() : Infinity;
+                if (dateA !== dateB) return dateA - dateB;
+                return a.analysis.percent - b.analysis.percent;
+            });
+
+            // Display top 4 items
+            const topUpcoming = upcomingCandidates.slice(0, 4);
+            topUpcoming.forEach(({ part, analysis }) => {
+                const pct = Math.round(analysis.percent * 100);
+                let barColor = 'var(--success)';
+                if (pct <= 30) barColor = 'var(--warning)';
+                else if (pct <= 50) barColor = 'var(--primary)';
+
+                const dueFormatted = analysis.nextDueDate ? formatThaiDate(analysis.nextDueDate) : '-';
+                const catIcon = part.category === 'engine' ? '🛢️' : part.category === 'wheels' ? '🛞' : part.category === 'electrical' ? '🔋' : part.category === 'documents' ? '📄' : '🔧';
+
+                const cardHTML = `
+                    <div class="upcoming-card">
+                        <div class="upcoming-header">
+                            <span class="upcoming-title">${catIcon} ${part.name}</span>
+                            <span class="upcoming-date-badge">📅 คาดว่าถึง: ${dueFormatted}</span>
+                        </div>
+                        <div class="upcoming-details">
+                            <span>${analysis.explanation}</span>
+                            <span style="font-weight: 600; color: ${barColor};">อายุคงเหลือ ${pct}%</span>
+                        </div>
+                        <div class="upcoming-progress-bg">
+                            <div class="upcoming-progress-fill" style="width: ${pct}%; background: ${barColor};"></div>
+                        </div>
+                    </div>
+                `;
+                upcomingContainer.insertAdjacentHTML('beforeend', cardHTML);
+            });
+        }
+    }
+
+    // 7. Recent Maintenance History Activity (Top 3 recent records)
+    const recentHistContainer = document.getElementById('dashboard-recent-history-list');
+    const totalHistCountElem = document.getElementById('dash-hist-total-count');
+    if (totalHistCountElem) totalHistCountElem.innerText = state.history.length;
+
+    if (recentHistContainer) {
+        recentHistContainer.innerHTML = '';
+        if (!state.history || state.history.length === 0) {
+            recentHistContainer.innerHTML = `
+                <div class="empty-state" style="padding: 14px;">
+                    <span class="icon" style="font-size: 1.5rem;">📝</span>
+                    <p style="font-size: 0.82rem; margin-top: 4px;">ยังไม่มีประวัติการซ่อมบำรุง</p>
+                </div>
+            `;
+        } else {
+            const sortedHist = [...state.history].sort((a, b) => new Date(b.date) - new Date(a.date));
+            const top3 = sortedHist.slice(0, 3);
+            top3.forEach(record => {
+                const dateFormatted = new Date(record.date).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+                const costDisplay = record.cost ? `฿${parseFloat(record.cost).toLocaleString('th-TH')}` : 'ฟรี / ไม่ระบุ';
+                const hasReceipt = (record.attachments && record.attachments.length > 0) || record.receipt;
+                const receiptIcon = hasReceipt ? '📎' : '';
+                const mechanicText = record.mechanic ? ` • 🏢 ${record.mechanic}` : '';
+
+                const itemHTML = `
+                    <div class="recent-history-item">
+                        <div class="recent-hist-left">
+                            <span class="recent-hist-name">${receiptIcon} ${record.partName}</span>
+                            <span class="recent-hist-meta">
+                                <span>📅 ${dateFormatted}</span>
+                                <span>🚗 ${(record.mileage || 0).toLocaleString('th-TH')} กม.</span>
+                                ${mechanicText ? `<span>${mechanicText}</span>` : ''}
+                            </span>
+                        </div>
+                        <div class="recent-hist-right">
+                            <span class="recent-hist-cost">${costDisplay}</span>
+                        </div>
+                    </div>
+                `;
+                recentHistContainer.insertAdjacentHTML('beforeend', itemHTML);
+            });
+        }
     }
 }
 
@@ -3609,10 +3787,54 @@ document.getElementById('form-car-info').addEventListener('submit', (e) => {
     alert("บันทึกข้อมูลรถยนต์เรียบร้อยแล้ว");
 });
 
-// Dashboard redirect helpers
+// Dashboard redirect & quick action helpers
 document.getElementById('btn-goto-tracker').addEventListener('click', () => {
     document.getElementById('btn-tab-tracker').click();
 });
+
+const btnGotoHist = document.getElementById('btn-goto-history');
+if (btnGotoHist) {
+    btnGotoHist.addEventListener('click', () => {
+        document.getElementById('btn-tab-history').click();
+    });
+}
+
+const btnDashAddHist = document.getElementById('btn-dash-add-history');
+if (btnDashAddHist) {
+    btnDashAddHist.addEventListener('click', () => {
+        openLogReplacement(null);
+    });
+}
+
+const statOverdue = document.getElementById('stat-card-overdue');
+if (statOverdue) {
+    statOverdue.addEventListener('click', () => {
+        const target = document.getElementById('card-urgent-actions');
+        if (target) target.scrollIntoView({ behavior: 'smooth' });
+    });
+}
+
+const statWarning = document.getElementById('stat-card-warning');
+if (statWarning) {
+    statWarning.addEventListener('click', () => {
+        const target = document.getElementById('card-urgent-actions');
+        if (target) target.scrollIntoView({ behavior: 'smooth' });
+    });
+}
+
+const statHealthy = document.getElementById('stat-card-healthy');
+if (statHealthy) {
+    statHealthy.addEventListener('click', () => {
+        document.getElementById('btn-tab-tracker').click();
+    });
+}
+
+const statCost = document.getElementById('stat-card-cost');
+if (statCost) {
+    statCost.addEventListener('click', () => {
+        document.getElementById('btn-tab-history').click();
+    });
+}
 
 // Sync Conflict Toast Banner reload button
 document.getElementById('btn-toast-reload').addEventListener('click', () => {

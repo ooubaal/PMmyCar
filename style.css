@@ -478,6 +478,17 @@ a:hover {
 .stat-card.urgent::before { background-color: var(--danger); }
 .stat-card.warning::before { background-color: var(--warning); }
 .stat-card.healthy::before { background-color: var(--success); }
+.stat-card.cost-card::before { background-color: var(--primary); }
+
+.stat-card.clickable {
+    cursor: pointer;
+    transition: transform var(--transition-speed), border-color var(--transition-speed);
+}
+
+.stat-card.clickable:hover {
+    transform: translateY(-3px);
+    border-color: var(--border-hover);
+}
 
 .stat-icon {
     font-size: 2rem;
@@ -501,39 +512,55 @@ a:hover {
     margin-top: 4px;
 }
 
-.dashboard-layout {
+.dashboard-layout,
+.dashboard-grid-main {
     display: grid;
-    grid-template-columns: 1fr 1.6fr;
-    gap: 30px;
+    grid-template-columns: 1fr 1.35fr;
+    gap: 24px;
 }
 
-/* Dashboard Health Gauge */
+.dashboard-col {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+/* Dashboard Health Gauge & Readiness Card */
 .car-status-card {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    text-align: center;
+    align-items: stretch;
+    text-align: left;
 }
 
 .car-status-card h3 {
-    align-self: flex-start;
-    margin-bottom: 20px;
+    margin-bottom: 0;
+}
+
+.readiness-gauge-row {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    width: 100%;
+    margin: 8px 0;
 }
 
 .status-gauge-container {
     position: relative;
-    width: 160px;
-    height: 160px;
-    margin: 20px 0;
+    width: 130px;
+    height: 130px;
+    flex-shrink: 0;
 }
 
 .status-gauge {
     transform: rotate(-90deg);
+    width: 100%;
+    height: 100%;
 }
 
 .gauge-bg {
     fill: none;
-    stroke: rgba(255, 255, 255, 0.03);
+    stroke: rgba(255, 255, 255, 0.05);
     stroke-width: 8;
 }
 
@@ -556,16 +583,238 @@ a:hover {
 
 .gauge-percent {
     font-family: var(--font-heading);
-    font-size: 1.8rem;
+    font-size: 1.7rem;
     font-weight: 800;
     line-height: 1;
 }
 
 .gauge-lbl {
-    font-size: 0.7rem;
+    font-size: 0.68rem;
     color: var(--text-muted);
     text-transform: uppercase;
     margin-top: 4px;
+}
+
+.readiness-info-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.badge-readiness {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 50px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    width: fit-content;
+}
+
+.badge-readiness.ready-green {
+    background: rgba(0, 230, 118, 0.12);
+    color: var(--success);
+    border: 1px solid rgba(0, 230, 118, 0.3);
+}
+
+.badge-readiness.ready-orange {
+    background: rgba(255, 171, 0, 0.12);
+    color: var(--warning);
+    border: 1px solid rgba(255, 171, 0, 0.3);
+}
+
+.badge-readiness.ready-red {
+    background: rgba(255, 82, 82, 0.12);
+    color: var(--danger);
+    border: 1px solid rgba(255, 82, 82, 0.3);
+}
+
+.readiness-subtext {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    line-height: 1.35;
+}
+
+/* Lifecycle Spectrum Bar */
+.lifecycle-spectrum-container {
+    width: 100%;
+    margin-top: 8px;
+}
+
+.lifecycle-spectrum-bar {
+    display: flex;
+    height: 8px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+}
+
+.spectrum-segment {
+    height: 100%;
+    transition: width 0.5s ease;
+}
+
+.spectrum-segment.seg-healthy { background: var(--success); }
+.spectrum-segment.seg-warning { background: var(--warning); }
+.spectrum-segment.seg-overdue { background: var(--danger); }
+
+.spectrum-legend {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    margin-top: 5px;
+}
+
+.spectrum-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.legend-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+}
+
+.legend-dot.dot-healthy { background: var(--success); }
+.legend-dot.dot-warning { background: var(--warning); }
+.legend-dot.dot-overdue { background: var(--danger); }
+
+/* Upcoming Forecast List */
+.upcoming-forecast-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 380px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.upcoming-card {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    padding: 12px 14px;
+    transition: border-color var(--transition-speed), background var(--transition-speed);
+}
+
+.upcoming-card:hover {
+    border-color: var(--border-hover);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.upcoming-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.upcoming-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.upcoming-date-badge {
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: var(--primary);
+    background: rgba(0, 242, 254, 0.08);
+    border: 1px solid rgba(0, 242, 254, 0.2);
+    padding: 2px 7px;
+    border-radius: 4px;
+}
+
+.upcoming-details {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+}
+
+.upcoming-progress-bg {
+    width: 100%;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.upcoming-progress-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.6s ease;
+}
+
+/* Recent History List */
+.recent-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.recent-history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-md);
+    padding: 10px 14px;
+    font-size: 0.84rem;
+}
+
+.recent-history-item:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.recent-hist-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.recent-hist-name {
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.recent-hist-meta {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    display: flex;
+    gap: 8px;
+}
+
+.recent-hist-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+}
+
+.recent-hist-cost {
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 0.88rem;
+}
+
+.badge-urgent-count {
+    background: var(--danger);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 50px;
 }
 
 .car-summary-details {
