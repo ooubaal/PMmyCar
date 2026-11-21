@@ -644,9 +644,78 @@ function updateState(updaterFn) {
 
 // --- 6. PDF & IMAGE COMPRESSION ENGINE (PDF24 STYLE - CLIENT-SIDE) ---
 
-// Initialize PDF.js worker if available
-if (window.pdfjsLib) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+// Robust PDF processing libraries loader & validator (PDF.js + PDF-Lib)
+let pdfLibrariesPromise = null;
+
+function ensurePdfLibraries() {
+    if (window.pdfjsLib && window.PDFLib) {
+        if (!window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+        return Promise.resolve(true);
+    }
+
+    if (pdfLibrariesPromise) {
+        return pdfLibrariesPromise;
+    }
+
+    pdfLibrariesPromise = (async () => {
+        const loadScript = (primaryUrl, fallbackUrl) => {
+            return new Promise((resolve) => {
+                const s = document.createElement('script');
+                s.src = primaryUrl;
+                s.crossOrigin = 'anonymous';
+                s.onload = () => resolve(true);
+                s.onerror = () => {
+                    console.warn(`[PDF Engine] Primary CDN failed: ${primaryUrl}, trying fallback: ${fallbackUrl}`);
+                    const fb = document.createElement('script');
+                    fb.src = fallbackUrl;
+                    fb.crossOrigin = 'anonymous';
+                    fb.onload = () => resolve(true);
+                    fb.onerror = () => {
+                        console.error(`[PDF Engine] Fallback CDN failed: ${fallbackUrl}`);
+                        resolve(false);
+                    };
+                    document.head.appendChild(fb);
+                };
+                document.head.appendChild(s);
+            });
+        };
+
+        // 1. Ensure PDF.js
+        if (!window.pdfjsLib) {
+            await loadScript(
+                'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+                'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js'
+            );
+        }
+        if (window.pdfjsLib && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+
+        // 2. Ensure PDFLib
+        if (!window.PDFLib) {
+            await loadScript(
+                'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js',
+                'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js'
+            );
+        }
+
+        if (!window.pdfjsLib || !window.PDFLib) {
+            pdfLibrariesPromise = null;
+            throw new Error("ไม่สามารถโหลดไลบรารีประมวลผล PDF ได้ กรุณาเชื่อมต่ออินเทอร์เน็ต");
+        }
+        return true;
+    })();
+
+    return pdfLibrariesPromise;
+}
+
+// Prefetch PDF engine in background
+if (typeof window !== 'undefined') {
+    setTimeout(() => {
+        ensurePdfLibraries().catch(e => console.warn("[PDF Engine] Prefetch notice:", e.message));
+    }, 1200);
 }
 
 // Format byte size into readable string (B, KB, MB)
@@ -742,9 +811,7 @@ async function compressPdf(fileOrDataUrl, options = {}) {
         onProgress = null
     } = options;
 
-    if (!window.pdfjsLib || !window.PDFLib) {
-        throw new Error("PDF processing libraries are loading or unavailable");
-    }
+    await ensurePdfLibraries();
 
     // Convert input to ArrayBuffer
     let arrayBuffer;
@@ -838,6 +905,61 @@ async function compressPdf(fileOrDataUrl, options = {}) {
     };
 }
 
+// Auto-compress legacy uncompressed attachments in memory / database
+async function optimizeExistingAttachments() {
+    let modified = false;
+    try {
+        await ensurePdfLibraries();
+        const checkAndCompress = async (att) => {
+            if (!att || !att.data) return false;
+            const isPdf = (att.name && att.name.toLowerCase().endsWith('.pdf')) || (att.data && att.data.startsWith('data:application/pdf')) || att.docType === 'pdf';
+            if (isPdf && (!att.compressedSize || (att.originalSize && att.compressedSize === att.originalSize && att.originalSize > 200 * 1024))) {
+                console.log(`[Auto-Optimizer] Optimizing legacy PDF: ${att.name || 'document'}`);
+                const res = await compressPdf(att.data, { maxDimension: 1280, quality: 0.70 });
+                att.data = res.dataUrl;
+                att.thumbnail = res.thumbnail;
+                att.docType = 'pdf';
+                att.pageCount = res.pageCount;
+                att.originalSize = res.originalSize;
+                att.compressedSize = res.compressedSize;
+                att.savingsPercent = res.savingsPercent;
+                return true;
+            }
+            return false;
+        };
+
+        if (state.history && Array.isArray(state.history)) {
+            for (const h of state.history) {
+                const atts = getRecordAttachments(h);
+                for (const a of atts) {
+                    if (await checkAndCompress(a)) modified = true;
+                }
+            }
+        }
+        if (state.parts && Array.isArray(state.parts)) {
+            for (const p of state.parts) {
+                if (p.attachments && Array.isArray(p.attachments)) {
+                    for (const a of p.attachments) {
+                        if (await checkAndCompress(a)) modified = true;
+                    }
+                }
+            }
+        }
+        if (state.car && state.car.documents && Array.isArray(state.car.documents)) {
+            for (const a of state.car.documents) {
+                if (await checkAndCompress(a)) modified = true;
+            }
+        }
+
+        if (modified) {
+            console.log("[Auto-Optimizer] All legacy attachments successfully compressed and optimized!");
+            saveStateToCache();
+        }
+    } catch (e) {
+        console.warn("[Auto-Optimizer] Notice:", e.message);
+    }
+}
+
 // Universal attachment processor across modules
 async function processAttachmentFiles(files, targetArray, previewRenderFn, statusElemId, context = 'history') {
     if (!files || files.length === 0) return;
@@ -880,67 +1002,33 @@ async function processAttachmentFiles(files, targetArray, previewRenderFn, statu
         } else if (lowerName.endsWith('.pdf') || file.type === 'application/pdf') {
             try {
                 if (statusElem) {
-                    statusElem.innerHTML = `<span class="spinner">⏳</span> กำลังบีบอัด PDF "${file.name}" (สไตล์ PDF24)...`;
+                    statusElem.innerHTML = `<span class="spinner">⏳</span> กำลังบีบอัด PDF "${file.name}" อัตโนมัติ (HD คมชัดประหยัดพื้นที่)...`;
                 }
-                if (window.pdfjsLib && window.PDFLib) {
-                    const res = await compressPdf(file, {
-                        maxDimension: 1280,
-                        quality: 0.70,
-                        onProgress: (curr, total) => {
-                            if (statusElem) {
-                                statusElem.innerHTML = `<span class="spinner">⏳</span> กำลังบีบอัด PDF "${file.name}" หน้า ${curr}/${total}...`;
-                            }
+                await ensurePdfLibraries();
+                const res = await compressPdf(file, {
+                    maxDimension: 1280,
+                    quality: 0.70,
+                    onProgress: (curr, total) => {
+                        if (statusElem) {
+                            statusElem.innerHTML = `<span class="spinner">⏳</span> กำลังบีบอัด PDF "${file.name}" หน้า ${curr}/${total}...`;
                         }
-                    });
-                    targetArray.push({
-                        id: attachId,
-                        name: file.name,
-                        data: res.dataUrl,
-                        thumbnail: res.thumbnail,
-                        type: 'doc',
-                        docType: 'pdf',
-                        pageCount: res.pageCount,
-                        originalSize: res.originalSize,
-                        compressedSize: res.compressedSize,
-                        savingsPercent: res.savingsPercent
-                    });
-                } else {
-                    // Fallback to FileReader if libraries are unavailable
-                    const reader = new FileReader();
-                    await new Promise(res => {
-                        reader.onload = (e) => {
-                            targetArray.push({
-                                id: attachId,
-                                name: file.name,
-                                data: e.target.result,
-                                type: 'doc',
-                                docType: 'pdf',
-                                originalSize: file.size,
-                                compressedSize: file.size
-                            });
-                            res();
-                        };
-                        reader.readAsDataURL(file);
-                    });
-                }
+                    }
+                });
+                targetArray.push({
+                    id: attachId,
+                    name: file.name,
+                    data: res.dataUrl,
+                    thumbnail: res.thumbnail,
+                    type: 'doc',
+                    docType: 'pdf',
+                    pageCount: res.pageCount,
+                    originalSize: res.originalSize,
+                    compressedSize: res.compressedSize,
+                    savingsPercent: res.savingsPercent
+                });
             } catch (err) {
                 console.error("PDF compression error:", err);
-                const reader = new FileReader();
-                await new Promise(res => {
-                    reader.onload = (e) => {
-                        targetArray.push({
-                            id: attachId,
-                            name: file.name,
-                            data: e.target.result,
-                            type: 'doc',
-                            docType: 'pdf',
-                            originalSize: file.size,
-                            compressedSize: file.size
-                        });
-                        res();
-                    };
-                    reader.readAsDataURL(file);
-                });
+                alert(`เกิดข้อผิดพลาดในการบีบอัดไฟล์ PDF "${file.name}":\n${err.message}\n\n* เพื่อความปลอดภัยและประหยัดพื้นที่ระยะยาว ระบบจะรับเฉพาะไฟล์ PDF ที่ผ่านการบีบอัดแล้วเท่านั้น`);
             }
         } else {
             // Other office documents
@@ -2220,6 +2308,7 @@ async function openDocumentViewer(att, title = "ดูเอกสารแน�
 
     const modalTitle = document.getElementById('doc-viewer-title');
     const modalMeta = document.getElementById('doc-viewer-meta');
+    const badgeEl = document.getElementById('doc-viewer-compress-badge');
     const imgEl = document.getElementById('receipt-zoom-img');
     const canvasEl = document.getElementById('pdf-viewer-canvas');
     const iframeEl = document.getElementById('doc-viewer-iframe');
@@ -2228,8 +2317,19 @@ async function openDocumentViewer(att, title = "ดูเอกสารแน�
 
     if (modalTitle) modalTitle.innerText = title;
     if (modalMeta) {
-        const sizeInfo = att.compressedSize ? `ขนาด: ${formatFileSize(att.compressedSize)}` : '';
+        const sizeInfo = att.compressedSize ? `ขนาด: ${formatFileSize(att.compressedSize)}` : (att.originalSize ? `ขนาด: ${formatFileSize(att.originalSize)}` : '');
         modalMeta.innerText = `${att.name || ''} ${sizeInfo}`;
+    }
+    if (badgeEl) {
+        if (att.savingsPercent && att.savingsPercent > 0) {
+            badgeEl.innerText = `⚡ บีบอัด HD แล้ว (ลดลง ${att.savingsPercent}%)`;
+            badgeEl.style.display = 'inline-flex';
+        } else if (att.compressedSize) {
+            badgeEl.innerText = `⚡ บีบอัด HD ประหยัดพื้นที่แล้ว`;
+            badgeEl.style.display = 'inline-flex';
+        } else {
+            badgeEl.style.display = 'none';
+        }
     }
     if (zoomText) zoomText.innerText = '100%';
 
@@ -2241,21 +2341,40 @@ async function openDocumentViewer(att, title = "ดูเอกสารแน�
         canvasEl.style.display = 'block';
         if (pdfControls) pdfControls.style.display = 'flex';
 
-        if (window.pdfjsLib) {
+        // Auto-optimize legacy uncompressed PDF if detected
+        if (!att.compressedSize || (att.originalSize && att.compressedSize === att.originalSize && att.originalSize > 200 * 1024)) {
             try {
-                const bytes = dataUriToUint8Array(att.data);
-                const loadingTask = pdfjsLib.getDocument({ data: bytes.buffer });
-                currentViewerPdfInstance = await loadingTask.promise;
-                currentViewerTotalPages = currentViewerPdfInstance.numPages;
-                await renderViewerPdfPage(currentViewerPage);
-            } catch (err) {
-                console.error("PDF viewer render error:", err);
-                canvasEl.style.display = 'none';
-                iframeEl.style.display = 'block';
-                iframeEl.src = att.data;
-                if (pdfControls) pdfControls.style.display = 'none';
+                await ensurePdfLibraries();
+                const res = await compressPdf(att.data, { maxDimension: 1280, quality: 0.70 });
+                att.data = res.dataUrl;
+                att.thumbnail = res.thumbnail;
+                att.docType = 'pdf';
+                att.pageCount = res.pageCount;
+                att.originalSize = res.originalSize;
+                att.compressedSize = res.compressedSize;
+                att.savingsPercent = res.savingsPercent;
+                if (modalMeta) {
+                    modalMeta.innerText = `${att.name || ''} ขนาด: ${formatFileSize(att.compressedSize)}`;
+                }
+                if (badgeEl) {
+                    badgeEl.innerText = `⚡ บีบอัด HD แล้ว (ลดลง ${att.savingsPercent}%)`;
+                    badgeEl.style.display = 'inline-flex';
+                }
+                saveStateToCache();
+            } catch (e) {
+                console.warn("[PDF Engine] Auto-compress notice:", e.message);
             }
-        } else {
+        }
+
+        try {
+            await ensurePdfLibraries();
+            const bytes = dataUriToUint8Array(att.data);
+            const loadingTask = pdfjsLib.getDocument({ data: bytes.buffer });
+            currentViewerPdfInstance = await loadingTask.promise;
+            currentViewerTotalPages = currentViewerPdfInstance.numPages;
+            await renderViewerPdfPage(currentViewerPage);
+        } catch (err) {
+            console.error("PDF viewer render error:", err);
             canvasEl.style.display = 'none';
             iframeEl.style.display = 'block';
             iframeEl.src = att.data;
@@ -2375,11 +2494,14 @@ document.getElementById('btn-doc-open-tab').addEventListener('click', () => {
     }
 });
 
-document.getElementById('btn-doc-compress-tune').addEventListener('click', () => {
-    if (!currentViewerDoc) return;
-    closeModal('modal-receipt-view');
-    openCompressorHelper(currentViewerDoc, 'viewer');
-});
+const btnDocCompressTune = document.getElementById('btn-doc-compress-tune');
+if (btnDocCompressTune) {
+    btnDocCompressTune.addEventListener('click', () => {
+        if (!currentViewerDoc) return;
+        closeModal('modal-receipt-view');
+        openCompressorHelper(currentViewerDoc, 'viewer');
+    });
+}
 
 // Zoom Receipt / Attachment Modal Controls (backward compatible)
 window.zoomAttachment = function(recordId, attachIdx = 0) {
@@ -2503,12 +2625,11 @@ async function runCompressionInHelper() {
             compHelperTotalPages = compHelperResult.pageCount || 1;
 
             // Load compressed PDF for preview
-            if (window.pdfjsLib) {
-                const bytes = dataUriToUint8Array(compHelperResult.dataUrl);
-                const loadingTask = pdfjsLib.getDocument({ data: bytes.buffer });
-                compHelperPdfInstance = await loadingTask.promise;
-                await renderCompressorHelperPage(compHelperPage);
-            }
+            await ensurePdfLibraries();
+            const bytes = dataUriToUint8Array(compHelperResult.dataUrl);
+            const loadingTask = pdfjsLib.getDocument({ data: bytes.buffer });
+            compHelperPdfInstance = await loadingTask.promise;
+            await renderCompressorHelperPage(compHelperPage);
 
             if (pageNav) {
                 pageNav.style.display = compHelperTotalPages > 1 ? 'flex' : 'none';
@@ -3026,6 +3147,11 @@ window.addEventListener('DOMContentLoaded', async () => {
         
         // Initial render
         renderAll();
+
+        // Background auto-optimization for any legacy uncompressed attachments
+        setTimeout(() => {
+            optimizeExistingAttachments();
+        }, 2500);
     } catch (e) {
         console.error("App Booting failed:", e);
     }

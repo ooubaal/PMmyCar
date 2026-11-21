@@ -16,7 +16,7 @@
     <!-- PDF.js for rendering PDF pages to Canvas (Mozilla) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <!-- PDF-Lib for generating compact PDFs client-side -->
-    <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.9/dist/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 
     <!-- Flatpickr Datepicker CSS (Base + Dark Theme) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
@@ -261,7 +261,7 @@
                                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                                         <label style="margin-bottom: 0;">เอกสารประจำรถ (เล่มทะเบียน / คู่มือ / เอกสารสำคัญ PDF หรือรูปภาพ)</label>
                                         <div style="display: flex; align-items: center; gap: 8px;">
-                                            <button type="button" class="btn-text-tool" id="btn-helper-car" title="ปรับระดับการบีบอัด PDF/รูปภาพ">⚙️ ปรับบีบอัด (PDF24)</button>
+                                            <span class="auto-compress-tag" title="ทุกไฟล์จะถูกบีบอัดอัตโนมัติ 100% เพื่อประหยัดพื้นที่">⚡ บีบอัดอัตโนมัติ 100%</span>
                                             <span id="car-docs-count" style="font-size: 0.8rem; color: var(--primary); font-weight: 600;"></span>
                                         </div>
                                     </div>
@@ -270,7 +270,7 @@
                                         <div class="upload-placeholder" id="car-doc-upload-placeholder">
                                             <span class="icon">🚗 📕</span>
                                             <span class="text">คลิกเพื่อ แนบไฟล์เล่มทะเบียน / คู่มือรถ (PDF หรือรูปภาพ)</span>
-                                            <span class="subtext">ระบบบีบอัดอัตโนมัติ (สไตล์ PDF24) อ่านตัวหนังสือและเลขตัวถังชัดเจน ประหยัดพื้นที่คลาวด์</span>
+                                            <span class="subtext">บีบอัดอัตโนมัติ 100% (สไตล์ PDF24) อ่านตัวหนังสือและเลขตัวถังชัดเจน ประหยัดพื้นที่คลาวด์ระยะยาว</span>
                                         </div>
                                     </div>
                                     <div class="attachments-preview-grid" id="car-docs-preview-grid" style="display: none;"></div>
@@ -501,7 +501,7 @@
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                         <label style="margin-bottom: 0;">แนบเอกสารกำกับ / กรมธรรม์ / ใบรับประกัน / สเปก (PDF หรือรูปภาพ)</label>
                         <div style="display: flex; align-items: center; gap: 8px;">
-                            <button type="button" class="btn-text-tool" id="btn-helper-part" title="ปรับระดับการบีบอัด PDF/รูปภาพ">⚙️ ปรับบีบอัด (PDF24)</button>
+                            <span class="auto-compress-tag" title="ทุกไฟล์จะถูกบีบอัดอัตโนมัติ 100% เพื่อประหยัดพื้นที่">⚡ บีบอัดอัตโนมัติ 100%</span>
                             <span id="part-files-count" style="font-size: 0.8rem; color: var(--primary); font-weight: 600;"></span>
                         </div>
                     </div>
@@ -510,7 +510,7 @@
                         <div class="upload-placeholder" id="part-upload-placeholder">
                             <span class="icon">📎 📕</span>
                             <span class="text">คลิกเพื่อ แนบเอกสารสเปก, ใบรับประกัน หรือไฟล์ PDF กรมธรรม์</span>
-                            <span class="subtext">รองรับ PDF และรูปภาพ พร้อมระบบบีบอัดย่อขนาด (สไตล์ PDF24) อ่านออกคมชัด</span>
+                            <span class="subtext">รองรับ PDF และรูปภาพ บีบอัดย่อขนาดอัตโนมัติ 100% (สไตล์ PDF24) อ่านออกคมชัด ประหยัดพื้นที่ระยะยาว</span>
                         </div>
                     </div>
                     <div class="attachments-preview-grid" id="part-attachments-preview-grid" style="display: none;"></div>
@@ -581,7 +581,7 @@
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                         <label style="margin-bottom: 0;">แนบรูปภาพใบเสร็จ หรือไฟล์เอกสาร PDF (แนบได้หลายไฟล์)</label>
                         <div style="display: flex; align-items: center; gap: 8px;">
-                            <button type="button" class="btn-text-tool" id="btn-helper-history" title="ปรับระดับการบีบอัด PDF/รูปภาพ">⚙️ ปรับบีบอัด (PDF24)</button>
+                            <span class="auto-compress-tag" title="ทุกไฟล์จะถูกบีบอัดอัตโนมัติ 100% เพื่อประหยัดพื้นที่">⚡ บีบอัดอัตโนมัติ 100%</span>
                             <span id="hist-files-count" style="font-size: 0.8rem; color: var(--primary); font-weight: 600;"></span>
                         </div>
                     </div>
@@ -590,7 +590,7 @@
                         <div class="upload-placeholder" id="receipt-upload-placeholder">
                             <span class="icon">📷 📕</span>
                             <span class="text">คลิกเพื่อ ถ่ายภาพ / เลือกรูป หรือแนบไฟล์เอกสาร PDF ใบเสร็จ</span>
-                            <span class="subtext">มีระบบบีบอัดอัจฉริยะ (สไตล์ PDF24) ย่อไฟล์เล็กลง 90%+ แต่อ่านตัวเลขคมชัด ประหยัดพื้นที่คลาวด์</span>
+                            <span class="subtext">บีบอัดอัตโนมัติ 100% (สไตล์ PDF24) ย่อไฟล์เล็กลง 90%+ แต่อ่านตัวเลขคมชัด ประหยัดพื้นที่ระยะยาว</span>
                         </div>
                     </div>
 
@@ -618,7 +618,10 @@
             <div class="modal-header">
                 <div>
                     <h3 id="doc-viewer-title">ดูเอกสารแนบ / ใบเสร็จ</h3>
-                    <span id="doc-viewer-meta" style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-top: 2px;"></span>
+                    <div id="doc-viewer-meta-container" style="display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap;">
+                        <span id="doc-viewer-meta" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+                        <span id="doc-viewer-compress-badge" class="auto-compress-tag" style="display: none;">⚡ บีบอัด HD ประหยัดพื้นที่แล้ว</span>
+                    </div>
                 </div>
                 <button class="btn-close-modal" id="btn-close-receipt-zoom">&times;</button>
             </div>
@@ -652,7 +655,6 @@
                 <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                     <button type="button" class="btn btn-sm btn-outline-cyan" id="btn-doc-download">📥 ดาวน์โหลด</button>
                     <button type="button" class="btn btn-sm btn-secondary" id="btn-doc-open-tab">↗️ เปิดแท็บใหม่</button>
-                    <button type="button" class="btn btn-sm btn-secondary" id="btn-doc-compress-tune">⚙️ ปรับบีบอัด (PDF24)</button>
                 </div>
                 <button class="btn btn-secondary" id="btn-close-receipt-zoom-footer">ปิดหน้าต่าง</button>
             </div>
