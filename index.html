@@ -612,6 +612,59 @@
         </div>
     </div>
 
+    <!-- MODAL 2.5: PART SERVICE HISTORY MODAL (SINGLE PART HISTORY) -->
+    <div class="modal-overlay" id="modal-part-history">
+        <div class="modal-box glass-card part-history-box">
+            <div class="modal-header">
+                <div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.4rem;">📜</span>
+                        <h3 id="part-hist-title">ประวัติการซ่อมบำรุง</h3>
+                    </div>
+                    <span id="part-hist-subtitle" style="font-size: 0.82rem; color: var(--text-muted); display: block; margin-top: 3px;"></span>
+                </div>
+                <button class="btn-close-modal" id="btn-close-part-history">&times;</button>
+            </div>
+
+            <!-- Part History Summary Stats -->
+            <div class="part-hist-stats-bar" id="part-hist-stats-bar">
+                <div class="hist-stat-item">
+                    <span class="lbl">เปลี่ยนทั้งหมด</span>
+                    <span class="val" id="part-hist-count">0 ครั้ง</span>
+                </div>
+                <div class="hist-stat-item">
+                    <span class="lbl">ยอดใช้จ่ายรวม</span>
+                    <span class="val text-cyan" id="part-hist-total-cost">฿ 0</span>
+                </div>
+                <div class="hist-stat-item">
+                    <span class="lbl">ครั้งล่าสุด</span>
+                    <span class="val" id="part-hist-last-date">-</span>
+                </div>
+                <div class="hist-stat-item">
+                    <span class="lbl">เลขไมล์ล่าสุด</span>
+                    <span class="val" id="part-hist-last-mileage">-</span>
+                </div>
+            </div>
+
+            <!-- Part History Records List -->
+            <div class="part-history-list" id="part-history-records-list">
+                <!-- Records rendered dynamically -->
+            </div>
+
+            <div class="modal-footer" style="justify-content: space-between;">
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-primary btn-sm" id="btn-part-hist-add-new">
+                        ➕ บันทึกการเปลี่ยนใหม่
+                    </button>
+                    <button type="button" class="btn btn-outline-cyan btn-sm" id="btn-part-hist-view-all">
+                        🔍 เปิดดูในหน้าประวัติรวม
+                    </button>
+                </div>
+                <button type="button" class="btn btn-secondary" id="btn-close-part-history-footer">ปิดหน้าต่าง</button>
+            </div>
+        </div>
+    </div>
+
     <!-- MODAL 3: UNIVERSAL DOCUMENT / RECEIPT / PDF VIEWER -->
     <div class="modal-overlay" id="modal-receipt-view">
         <div class="modal-box glass-card receipt-zoom-box">

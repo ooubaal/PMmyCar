@@ -1317,6 +1317,12 @@ function renderAll() {
     renderHistory();
     populatePartSelectDropdowns();
     renderMileageHistory();
+
+    // If part history modal is currently open, refresh its content in-place
+    const partHistModal = document.getElementById('modal-part-history');
+    if (partHistModal && partHistModal.classList.contains('active') && currentPartHistoryId) {
+        showPartHistory(currentPartHistoryId);
+    }
 }
 
 function renderHeader() {
@@ -1509,6 +1515,9 @@ function renderTracker() {
             targetText = `ทุก ${part.dueIntervalMileage.toLocaleString('th-TH')} กม. / ${part.dueMonths} ด.`;
         }
 
+        const partHistories = state.history.filter(h => h.partId === part.id);
+        const histCount = partHistories.length;
+
         const cardHTML = `
             <div class="glass-card part-card">
                 <div class="part-card-header">
@@ -1569,9 +1578,14 @@ function renderTracker() {
                 ` : ''}
 
                 <div class="part-card-footer">
-                    <button class="btn btn-sm btn-secondary" onclick="openEditPart('${part.id}')">แก้ไขสเปก</button>
-                    <button class="btn btn-sm btn-primary" onclick="openLogReplacement('${part.id}')" style="flex-grow:1;">
-                        บันทึกการเปลี่ยนอะไหล่
+                    <button type="button" class="btn btn-sm btn-outline-cyan btn-part-history" onclick="showPartHistory('${part.id}')" title="คลิกเพื่อดูประวัติการซ่อม/เปลี่ยนทั้งหมดของ ${part.name}">
+                        📜 ประวัติ (${histCount})
+                    </button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="openEditPart('${part.id}')" title="แก้ไขสเปกหรือรอบบำรุงรักษา">
+                        แก้ไขสเปก
+                    </button>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="openLogReplacement('${part.id}')" style="flex-grow:1;" title="บันทึกการเปลี่ยนอะไหล่">
+                        บันทึกการเปลี่ยน
                     </button>
                 </div>
             </div>
@@ -2042,6 +2056,186 @@ window.openEditPart = function(id) {
     document.getElementById('modal-part-title').innerText = "แก้ไขข้อมูลสเปกอะไหล่";
     openModal('modal-part');
 };
+
+// --- PART-SPECIFIC SERVICE HISTORY MODAL CONTROLS ---
+let currentPartHistoryId = null;
+
+window.showPartHistory = function(partId) {
+    const part = state.parts.find(p => p.id === partId);
+    if (!part) return;
+
+    currentPartHistoryId = partId;
+    const titleEl = document.getElementById('part-hist-title');
+    const subTitleEl = document.getElementById('part-hist-subtitle');
+    const countEl = document.getElementById('part-hist-count');
+    const costEl = document.getElementById('part-hist-total-cost');
+    const lastDateEl = document.getElementById('part-hist-last-date');
+    const lastMileEl = document.getElementById('part-hist-last-mileage');
+    const listEl = document.getElementById('part-history-records-list');
+
+    if (titleEl) titleEl.innerText = `ประวัติการซ่อมบำรุง: ${part.name}`;
+    if (subTitleEl) subTitleEl.innerText = `${CATEGORIES[part.category] || part.category} • ${part.description || 'ไม่มีรายละเอียดอะไหล่'}`;
+
+    // Filter all history records matching this part
+    const partRecords = state.history.filter(h => h.partId === partId);
+    partRecords.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // Summary calculations
+    const totalCount = partRecords.length;
+    let totalCost = 0;
+    partRecords.forEach(r => {
+        if (r.cost) totalCost += parseFloat(r.cost) || 0;
+    });
+
+    if (countEl) countEl.innerText = `${totalCount} ครั้ง`;
+    if (costEl) costEl.innerText = `฿ ${totalCost.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+    if (totalCount > 0) {
+        const latest = partRecords[0];
+        const latestDateFormatted = new Date(latest.date).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+        if (lastDateEl) lastDateEl.innerText = latestDateFormatted;
+        if (lastMileEl) lastMileEl.innerText = latest.mileage > 0 ? `${parseInt(latest.mileage).toLocaleString('th-TH')} กม.` : '-';
+    } else {
+        if (lastDateEl) lastDateEl.innerText = '-';
+        if (lastMileEl) lastMileEl.innerText = '-';
+    }
+
+    if (!listEl) return;
+    listEl.innerHTML = '';
+
+    if (totalCount === 0) {
+        listEl.innerHTML = `
+            <div class="empty-state" style="padding: 35px 20px;">
+                <span class="icon" style="font-size: 2.5rem; display: block; margin-bottom: 8px;">📜</span>
+                <p style="font-weight: 600; color: var(--text-main); margin-bottom: 4px;">ยังไม่มีประวัติการเปลี่ยน/ซ่อมสำหรับ "${part.name}"</p>
+                <span style="font-size: 0.85rem; color: var(--text-muted); display: block; margin-bottom: 16px;">
+                    คุณสามารถกดปุ่มด้านล่างเพื่อเริ่มบันทึกประวัติการเปลี่ยนครั้งแรกได้ทันที
+                </span>
+                <button type="button" class="btn btn-sm btn-primary" onclick="closeModal('modal-part-history'); openLogReplacement('${part.id}')">
+                    ➕ บันทึกการเปลี่ยนอะไหล่นี้ครั้งแรก
+                </button>
+            </div>
+        `;
+    } else {
+        partRecords.forEach(record => {
+            const dateFormatted = new Date(record.date).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+            const attachments = getRecordAttachments(record);
+            let receiptHTML = '';
+
+            if (attachments.length > 0) {
+                let itemsHTML = '';
+                attachments.forEach((att, attIdx) => {
+                    const name = att.name || 'เอกสารแนบ';
+                    const lowerName = name.toLowerCase();
+                    const isPdf = lowerName.endsWith('.pdf') || att.docType === 'pdf';
+                    const sizeText = att.compressedSize ? formatFileSize(att.compressedSize) : '';
+
+                    if (att.type === 'image') {
+                        itemsHTML += `
+                            <div class="timeline-attach-thumb" onclick="zoomAttachment('${record.id}', ${attIdx})" title="คลิกเพื่อเปิดดูรูป (${name})">
+                                <img src="${att.data}" alt="${name}">
+                                ${sizeText ? `<span class="attach-size-badge">${sizeText}</span>` : ''}
+                            </div>
+                        `;
+                    } else if (isPdf && att.thumbnail) {
+                        itemsHTML += `
+                            <div class="timeline-attach-thumb is-pdf-thumb" onclick="zoomAttachment('${record.id}', ${attIdx})" title="คลิกเพื่อเปิดดู PDF (${name})">
+                                <img src="${att.thumbnail}" alt="${name}">
+                                <span class="pdf-tag-overlay">📕 PDF</span>
+                                ${sizeText ? `<span class="attach-size-badge">${sizeText}</span>` : ''}
+                            </div>
+                        `;
+                    } else {
+                        itemsHTML += `
+                            <div class="doc-attachment-badge" onclick="zoomAttachment('${record.id}', ${attIdx})" title="คลิกเพื่อเปิดดู (${name})" style="cursor: pointer;">
+                                <span class="doc-badge-icon">${isPdf ? '📕' : '📄'}</span>
+                                <div class="doc-badge-info">
+                                    <span class="doc-badge-name">${name}</span>
+                                    <span class="doc-badge-action">👁️ เปิดดู ${sizeText ? `(${sizeText})` : ''} ↗</span>
+                                </div>
+                            </div>
+                        `;
+                    }
+                });
+                receiptHTML = `
+                    <div class="timeline-receipt-area" style="margin-top: 10px;">
+                        <div class="timeline-attachments-gallery">
+                            ${itemsHTML}
+                        </div>
+                    </div>
+                `;
+            }
+
+            const costDisplay = record.cost ? `${parseFloat(record.cost).toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})} บาท` : 'ไม่ระบุค่าใช้จ่าย';
+
+            const cardHTML = `
+                <div class="timeline-card" style="margin-bottom: 12px;">
+                    <div class="timeline-main-info">
+                        <div class="timeline-header">
+                            <span class="timeline-date-badge">📅 ${dateFormatted}</span>
+                            <div style="display: flex; gap: 10px;">
+                                <button type="button" class="btn btn-sm btn-text" onclick="closeModal('modal-part-history'); openEditHistory('${record.id}')" style="color:var(--primary); padding:0; min-height: auto;">✏️ แก้ไข</button>
+                                <button type="button" class="btn btn-sm btn-text" onclick="deleteHistoryRecord('${record.id}'); if(currentPartHistoryId) showPartHistory(currentPartHistoryId);" style="color:var(--danger); padding:0; min-height: auto;">🗑️ ลบ</button>
+                            </div>
+                        </div>
+                        <div class="timeline-meta" style="margin-top: 8px;">
+                            <span>🚗 ไมล์: ${record.mileage > 0 ? `${parseInt(record.mileage).toLocaleString('th-TH')} กม.` : 'ไม่ระบุ'}</span>
+                            <span>💰 ค่าใช้จ่าย: <strong class="text-cyan">${costDisplay}</strong></span>
+                        </div>
+                        ${record.mechanic ? `<div style="font-size:0.85rem; color:var(--text-muted); margin-top: 4px;">📍 สถานที่/อู่: <span style="color:var(--text-main);">${record.mechanic}</span></div>` : ''}
+                        ${record.notes ? `<p class="timeline-notes" style="margin-top: 6px;">${record.notes}</p>` : ''}
+                    </div>
+                    ${receiptHTML}
+                </div>
+            `;
+            listEl.insertAdjacentHTML('beforeend', cardHTML);
+        });
+    }
+
+    openModal('modal-part-history');
+};
+
+// Part History Modal button listeners
+const btnClosePartHist = document.getElementById('btn-close-part-history');
+if (btnClosePartHist) btnClosePartHist.addEventListener('click', () => closeModal('modal-part-history'));
+
+const btnClosePartHistFooter = document.getElementById('btn-close-part-history-footer');
+if (btnClosePartHistFooter) btnClosePartHistFooter.addEventListener('click', () => closeModal('modal-part-history'));
+
+const btnPartHistAddNew = document.getElementById('btn-part-hist-add-new');
+if (btnPartHistAddNew) {
+    btnPartHistAddNew.addEventListener('click', () => {
+        if (!currentPartHistoryId) return;
+        const targetId = currentPartHistoryId;
+        closeModal('modal-part-history');
+        openLogReplacement(targetId);
+    });
+}
+
+const btnPartHistViewAll = document.getElementById('btn-part-hist-view-all');
+if (btnPartHistViewAll) {
+    btnPartHistViewAll.addEventListener('click', () => {
+        if (!currentPartHistoryId) return;
+        const targetId = currentPartHistoryId;
+        closeModal('modal-part-history');
+
+        // Switch to history tab
+        document.querySelectorAll('.nav-menu .nav-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+        
+        const histNavBtn = document.getElementById('btn-tab-history');
+        const histTab = document.getElementById('tab-history');
+        if (histNavBtn) histNavBtn.classList.add('active');
+        if (histTab) histTab.classList.add('active');
+
+        // Pre-filter history dropdown to this part
+        const filterDropdown = document.getElementById('history-filter-part');
+        if (filterDropdown) {
+            filterDropdown.value = targetId;
+        }
+        renderHistory();
+    });
+}
 
 // Log Replacement Modal Controls
 window.openLogReplacement = function(partId) {
