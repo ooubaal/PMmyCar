@@ -473,26 +473,46 @@
                 <div class="due-type-selector">
                     <label class="radio-label">
                         <input type="radio" name="due-type" value="time" checked id="radio-due-time">
-                        <span>อิงตามเวลา (เช่น ทุก 6 เดือน)</span>
+                        <span>⏱️ ตามรอบเวลา<br><small style="color:var(--text-muted);">(เช่น ทุก 6 เดือน)</small></span>
                     </label>
                     <label class="radio-label">
                         <input type="radio" name="due-type" value="mileage" id="radio-due-mileage">
-                        <span>อิงตามระยะทาง (เช่น ทุก 10,000 กม.)</span>
+                        <span>🚗 ตามระยะทาง<br><small style="color:var(--text-muted);">(เช่น ทุก 10,000 กม.)</small></span>
                     </label>
                     <label class="radio-label">
                         <input type="radio" name="due-type" value="both" id="radio-due-both">
-                        <span>ทั้งสองอย่าง (ถึงอย่างใดอย่างหนึ่งก่อน)</span>
+                        <span>⚡ ทั้งเวลา & ระยะทาง<br><small style="color:var(--text-muted);">(ถึงอย่างใดอย่างหนึ่งก่อน)</small></span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="due-type" value="target_date" id="radio-due-target-date">
+                        <span>📅 วันที่เป้าหมาย<br><small style="color:var(--text-muted);">(วันหมดอายุ เช่น ประกัน/ภาษี)</small></span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="due-type" value="target_mileage" id="radio-due-target-mileage">
+                        <span>🎯 เลขไมล์เป้าหมาย<br><small style="color:var(--text-muted);">(เช่น เตือนที่ 115,000 กม.)</small></span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="due-type" value="target_both" id="radio-due-target-both">
+                        <span>🎯📅 ทั้งไมล์ & วันที่เป้าหมาย<br><small style="color:var(--text-muted);">(ถึงอย่างใดอย่างหนึ่งก่อน)</small></span>
                     </label>
                 </div>
 
                 <div class="form-row card-inside due-inputs-box">
-                    <div class="form-group" id="due-time-input-group">
+                    <div class="form-group flex-1" id="due-time-input-group">
                         <label for="part-due-months">กำหนดเปลี่ยนครั้งถัดไป (ทุกๆ กี่เดือน)</label>
-                        <input type="number" id="part-due-months" min="1" value="6" placeholder="ระบุจำนวนเดือน">
+                        <input type="number" id="part-due-months" min="1" value="6" placeholder="ระบุจำนวนเดือน (เช่น 6)">
                     </div>
-                    <div class="form-group" id="due-mileage-input-group" style="display: none;">
+                    <div class="form-group flex-1" id="due-mileage-input-group" style="display: none;">
                         <label for="part-due-interval-mileage">กำหนดเปลี่ยนครั้งถัดไป (ทุกๆ กี่กิโลเมตร)</label>
-                        <input type="number" id="part-due-interval-mileage" min="1" value="10000" placeholder="ระบุระยะทางเป็น กม.">
+                        <input type="number" id="part-due-interval-mileage" min="1" value="10000" placeholder="ระบุระยะทางเป็น กม. (เช่น 10000)">
+                    </div>
+                    <div class="form-group flex-1" id="due-target-date-group" style="display: none;">
+                        <label for="part-target-date">วันที่เป้าหมายครั้งถัดไป / วันหมดอายุ *</label>
+                        <input type="text" id="part-target-date" placeholder="เลือกวันที่เป้าหมาย (วัน/เดือน/ปี)">
+                    </div>
+                    <div class="form-group flex-1" id="due-target-mileage-group" style="display: none;">
+                        <label for="part-target-mileage">เลขไมล์เป้าหมายครั้งถัดไป (กม.) *</label>
+                        <input type="number" id="part-target-mileage" min="0" placeholder="ระบุเลขไมล์เป้าหมาย (เช่น 115000)">
                     </div>
                 </div>
 

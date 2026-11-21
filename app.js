@@ -32,6 +32,7 @@ const state = {
 
 // Flatpickr calendar instances
 let fpLastDateInstance = null;
+let fpTargetDateInstance = null;
 let fpHistDateInstance = null;
 let fpAddMileageDateInstance = null;
 
@@ -1171,17 +1172,37 @@ function calculatePartStatus(part, currentMileage) {
     let timePercent = 1.0;
     let nextDueDate = null;
     
-    // 1. Time-based calculation
+    // 1. Time-based calculation (recurring interval)
     if (part.dueType === 'time' || part.dueType === 'both') {
         const nextDate = new Date(lastDate);
-        nextDate.setMonth(nextDate.getMonth() + parseInt(part.dueMonths));
+        nextDate.setMonth(nextDate.getMonth() + parseInt(part.dueMonths || 0));
         nextDueDate = nextDate;
         
         const msDiff = nextDate - today;
         daysRemaining = Math.ceil(msDiff / (1000 * 60 * 60 * 24));
         
-        const totalDurationDays = part.dueMonths * 30.4;
+        const totalDurationDays = Math.max(1, (parseInt(part.dueMonths) || 1) * 30.4);
         timePercent = Math.max(0, daysRemaining / totalDurationDays);
+    } 
+    // 1.2 Target Date calculation (fixed target date/expiration)
+    else if (part.dueType === 'target_date' || part.dueType === 'target_both') {
+        if (part.targetDate) {
+            const targetDateObj = new Date(part.targetDate);
+            targetDateObj.setHours(0,0,0,0);
+            nextDueDate = targetDateObj;
+            
+            const msDiff = targetDateObj - today;
+            daysRemaining = Math.ceil(msDiff / (1000 * 60 * 60 * 24));
+            
+            let totalDurationDays = 365;
+            if (!isNaN(lastDate.getTime()) && targetDateObj > lastDate) {
+                totalDurationDays = Math.max(1, Math.ceil((targetDateObj - lastDate) / (1000 * 60 * 60 * 24)));
+            }
+            timePercent = Math.max(0, daysRemaining / totalDurationDays);
+        } else {
+            daysRemaining = 0;
+            timePercent = 0;
+        }
     }
     
     let mileageRemaining = Infinity;
@@ -1190,12 +1211,13 @@ function calculatePartStatus(part, currentMileage) {
     let predictedDueDate = null;
     let predictedDays = Infinity;
     
-    // 2. Mileage-based calculation
+    // 2. Mileage-based calculation (recurring interval)
     if (part.dueType === 'mileage' || part.dueType === 'both') {
-        nextDueMileage = parseInt(part.lastServiceMileage) + parseInt(part.dueIntervalMileage);
+        nextDueMileage = parseInt(part.lastServiceMileage || 0) + parseInt(part.dueIntervalMileage || 0);
         mileageRemaining = nextDueMileage - currentMileage;
         
-        mileagePercent = Math.max(0, mileageRemaining / part.dueIntervalMileage);
+        const interval = Math.max(100, parseInt(part.dueIntervalMileage) || 10000);
+        mileagePercent = Math.max(0, mileageRemaining / interval);
         
         // Calculate predicted date based on mileage usage rate
         if (mileageRemaining > 0 && avgDailyKm > 0) {
@@ -1207,9 +1229,28 @@ function calculatePartStatus(part, currentMileage) {
             predictedDays = 0;
             predictedDueDate = today;
         }
+    } 
+    // 2.2 Target Mileage calculation (fixed target odometer)
+    else if (part.dueType === 'target_mileage' || part.dueType === 'target_both') {
+        nextDueMileage = parseInt(part.targetMileage) || 0;
+        mileageRemaining = nextDueMileage - currentMileage;
+        
+        const lastKm = parseInt(part.lastServiceMileage) || 0;
+        const totalInterval = Math.max(100, nextDueMileage - lastKm);
+        mileagePercent = Math.max(0, mileageRemaining / totalInterval);
+        
+        if (mileageRemaining > 0 && avgDailyKm > 0) {
+            predictedDays = Math.ceil(mileageRemaining / avgDailyKm);
+            const predDate = new Date(today);
+            predDate.setDate(predDate.getDate() + predictedDays);
+            predictedDueDate = predDate;
+        } else if (mileageRemaining <= 0) {
+            predictedDays = 0;
+            predictedDueDate = today;
+        }
     }
     
-    // 3. Combined status
+    // 3. Combined status & explanations
     let percent = 1.0;
     let status = 'healthy'; // 'healthy' | 'warning' | 'overdue'
     let explanation = '';
@@ -1226,6 +1267,21 @@ function calculatePartStatus(part, currentMileage) {
             status = 'healthy';
             explanation = `เหลืออีก ${daysRemaining} วัน (ประมาณ ${formatThaiDate(nextDueDate)})`;
         }
+    } else if (part.dueType === 'target_date') {
+        percent = timePercent;
+        if (!part.targetDate) {
+            status = 'warning';
+            explanation = 'ยังไม่ได้ระบุวันที่เป้าหมาย';
+        } else if (daysRemaining <= 0) {
+            status = 'overdue';
+            explanation = `เลยกำหนดเป้าหมายแล้ว (${Math.abs(daysRemaining)} วัน)`;
+        } else if (daysRemaining <= 30 || percent <= 0.2) {
+            status = 'warning';
+            explanation = `เหลืออีก ${daysRemaining} วัน (เป้าหมาย: ${formatThaiDate(nextDueDate)})`;
+        } else {
+            status = 'healthy';
+            explanation = `เหลืออีก ${daysRemaining} วัน (เป้าหมาย: ${formatThaiDate(nextDueDate)})`;
+        }
     } else if (part.dueType === 'mileage') {
         percent = mileagePercent;
         if (mileageRemaining <= 0) {
@@ -1241,7 +1297,55 @@ function calculatePartStatus(part, currentMileage) {
                 explanation = `เหลืออีก ${mileageRemaining.toLocaleString('th-TH')} กม. (${dateStr})`;
             }
         }
-    } else { // Both
+    } else if (part.dueType === 'target_mileage') {
+        percent = mileagePercent;
+        if (!part.targetMileage || parseInt(part.targetMileage) <= 0) {
+            status = 'warning';
+            explanation = 'ยังไม่ได้ระบุเลขไมล์เป้าหมาย';
+        } else if (mileageRemaining <= 0) {
+            status = 'overdue';
+            explanation = `เลยเลขไมล์เป้าหมายแล้ว (${Math.abs(mileageRemaining).toLocaleString('th-TH')} กม.)`;
+        } else {
+            const dateStr = predictedDueDate ? ` (คาดว่าถึง: ${formatThaiDate(predictedDueDate)})` : '';
+            if (mileageRemaining <= 1000 || percent <= 0.2) {
+                status = 'warning';
+                explanation = `เหลืออีก ${mileageRemaining.toLocaleString('th-TH')} กม. (เป้าหมาย: ${nextDueMileage.toLocaleString('th-TH')} กม.)${dateStr}`;
+            } else {
+                status = 'healthy';
+                explanation = `เหลืออีก ${mileageRemaining.toLocaleString('th-TH')} กม. (เป้าหมาย: ${nextDueMileage.toLocaleString('th-TH')} กม.)${dateStr}`;
+            }
+        }
+    } else if (part.dueType === 'target_both') {
+        percent = Math.min(timePercent, mileagePercent);
+        const isTimeOverdue = daysRemaining <= 0;
+        const isMileageOverdue = mileageRemaining <= 0;
+        
+        if (isTimeOverdue || isMileageOverdue) {
+            status = 'overdue';
+            if (isTimeOverdue && isMileageOverdue) {
+                explanation = `เลยกำหนดทั้งเป้าหมายวันที่และเลขไมล์`;
+            } else if (isTimeOverdue) {
+                explanation = `เลยเป้าหมายวันที่แล้ว (${Math.abs(daysRemaining)} วัน)`;
+            } else {
+                explanation = `เลยเป้าหมายเลขไมล์แล้ว (${Math.abs(mileageRemaining).toLocaleString('th-TH')} กม.)`;
+            }
+        } else {
+            const isTimeWarning = daysRemaining <= 30 || timePercent <= 0.2;
+            const isMileageWarning = mileageRemaining <= 1000 || mileagePercent <= 0.2;
+            if (isTimeWarning || isMileageWarning) {
+                status = 'warning';
+            }
+            if (nextDueDate && predictedDueDate) {
+                if (nextDueDate < predictedDueDate) {
+                    explanation = `เหลือ ${daysRemaining} วัน (เป้าหมาย ${formatThaiDate(nextDueDate)} - ถึงก่อนเลขไมล์)`;
+                } else {
+                    explanation = `เหลือ ${mileageRemaining.toLocaleString('th-TH')} กม. (คาดว่าถึง ${formatThaiDate(predictedDueDate)} - ถึงก่อนวันที่)`;
+                }
+            } else {
+                explanation = `เหลือ ${daysRemaining} วัน หรือ ${mileageRemaining.toLocaleString('th-TH')} กม.`;
+            }
+        }
+    } else { // both (recurring)
         percent = Math.min(timePercent, mileagePercent);
         
         const isTimeOverdue = daysRemaining <= 0;
@@ -1510,9 +1614,16 @@ function renderTracker() {
         if (part.dueType === 'time') {
             targetText = `ทุก ${part.dueMonths} เดือน`;
         } else if (part.dueType === 'mileage') {
-            targetText = `ทุก ${part.dueIntervalMileage.toLocaleString('th-TH')} กม.`;
+            targetText = `ทุก ${parseInt(part.dueIntervalMileage || 0).toLocaleString('th-TH')} กม.`;
+        } else if (part.dueType === 'target_date') {
+            targetText = part.targetDate ? `เป้าหมาย: ${formatThaiDate(part.targetDate)}` : 'ยังไม่ได้ระบุ';
+        } else if (part.dueType === 'target_mileage') {
+            targetText = `เป้าหมาย: ${parseInt(part.targetMileage || 0).toLocaleString('th-TH')} กม.`;
+        } else if (part.dueType === 'target_both') {
+            const dateStr = part.targetDate ? formatThaiDate(part.targetDate) : '-';
+            targetText = `${parseInt(part.targetMileage || 0).toLocaleString('th-TH')} กม. / ${dateStr}`;
         } else {
-            targetText = `ทุก ${part.dueIntervalMileage.toLocaleString('th-TH')} กม. / ${part.dueMonths} ด.`;
+            targetText = `ทุก ${parseInt(part.dueIntervalMileage || 0).toLocaleString('th-TH')} กม. / ${part.dueMonths || 0} ด.`;
         }
 
         const partHistories = state.history.filter(h => h.partId === part.id);
@@ -1550,7 +1661,7 @@ function renderTracker() {
                         <span class="val">${parseInt(part.lastServiceMileage).toLocaleString('th-TH')} กม.</span>
                     </div>
                     <div class="metric-item">
-                        <span class="lbl">รอบเตือนถัดไป</span>
+                        <span class="lbl">${part.dueType && part.dueType.startsWith('target_') ? 'กำหนดเป้าหมาย' : 'รอบเตือนถัดไป'}</span>
                         <span class="val">${targetText}</span>
                     </div>
                     <div class="metric-item">
@@ -1861,15 +1972,30 @@ document.getElementById('btn-close-guide').addEventListener('click', () => {
     document.getElementById('client-id-guide-card').style.display = 'none';
 });
 
+// Function to toggle due input visibility based on due-type selection
+function updateDueInputsVisibility(val) {
+    const timeBox = document.getElementById('due-time-input-group');
+    const mileageBox = document.getElementById('due-mileage-input-group');
+    const targetDateBox = document.getElementById('due-target-date-group');
+    const targetMileageBox = document.getElementById('due-target-mileage-group');
+    
+    if (timeBox) timeBox.style.display = (val === 'time' || val === 'both') ? 'block' : 'none';
+    if (mileageBox) mileageBox.style.display = (val === 'mileage' || val === 'both') ? 'block' : 'none';
+    if (targetDateBox) targetDateBox.style.display = (val === 'target_date' || val === 'target_both') ? 'block' : 'none';
+    if (targetMileageBox) targetMileageBox.style.display = (val === 'target_mileage' || val === 'target_both') ? 'block' : 'none';
+}
+
 // Part Modal controls
 document.getElementById('btn-open-add-part-modal').addEventListener('click', () => {
     document.getElementById('form-part').reset();
     document.getElementById('part-id').value = '';
     document.getElementById('modal-part-title').innerText = "เพิ่มอะไหล่ใหม่ที่ต้องการติดตาม";
     
-    // Set default dates
+    // Set default dates & values
     if (fpLastDateInstance) fpLastDateInstance.setDate(new Date());
+    if (fpTargetDateInstance) fpTargetDateInstance.setDate('');
     document.getElementById('part-last-mileage').value = state.car.mileage;
+    document.getElementById('part-target-mileage').value = '';
     
     // Reset attachments
     currentPartAttachments = [];
@@ -1877,8 +2003,12 @@ document.getElementById('btn-open-add-part-modal').addEventListener('click', () 
     const compStatus = document.getElementById('part-compression-status');
     if (compStatus) compStatus.style.display = 'none';
 
-    // Toggle correct inputs
-    document.getElementById('radio-due-time').click();
+    // Toggle default inputs
+    const defaultRadio = document.getElementById('radio-due-time');
+    if (defaultRadio) {
+        defaultRadio.checked = true;
+        updateDueInputsVisibility('time');
+    }
     openModal('modal-part');
 });
 document.getElementById('btn-close-part-modal').addEventListener('click', () => closeModal('modal-part'));
@@ -1887,20 +2017,7 @@ document.getElementById('btn-cancel-part').addEventListener('click', () => close
 // Due setting radios toggle input displays
 document.getElementsByName('due-type').forEach(radio => {
     radio.addEventListener('change', (e) => {
-        const val = e.target.value;
-        const timeBox = document.getElementById('due-time-input-group');
-        const mileageBox = document.getElementById('due-mileage-input-group');
-        
-        if (val === 'time') {
-            timeBox.style.display = 'block';
-            mileageBox.style.display = 'none';
-        } else if (val === 'mileage') {
-            timeBox.style.display = 'none';
-            mileageBox.style.display = 'block';
-        } else {
-            timeBox.style.display = 'block';
-            mileageBox.style.display = 'block';
-        }
+        updateDueInputsVisibility(e.target.value);
     });
 });
 
@@ -1998,9 +2115,12 @@ document.getElementById('form-part').addEventListener('submit', (e) => {
     const lastDate = document.getElementById('part-last-date').value;
     const lastMileage = parseInt(document.getElementById('part-last-mileage').value) || 0;
     
-    const dueType = document.querySelector('input[name="due-type"]:checked').value;
+    const dueTypeRadio = document.querySelector('input[name="due-type"]:checked');
+    const dueType = dueTypeRadio ? dueTypeRadio.value : 'time';
     const dueMonths = parseInt(document.getElementById('part-due-months').value) || 0;
     const dueIntervalMileage = parseInt(document.getElementById('part-due-interval-mileage').value) || 0;
+    const targetDate = document.getElementById('part-target-date').value || '';
+    const targetMileage = parseInt(document.getElementById('part-target-mileage').value) || 0;
 
     updateState(() => {
         if (id) {
@@ -2012,6 +2132,7 @@ document.getElementById('form-part').addEventListener('submit', (e) => {
                     lastServiceDate: lastDate, 
                     lastServiceMileage: lastMileage, 
                     dueType, dueMonths, dueIntervalMileage,
+                    targetDate, targetMileage,
                     attachments: currentPartAttachments
                 };
             }
@@ -2023,6 +2144,7 @@ document.getElementById('form-part').addEventListener('submit', (e) => {
                 lastServiceDate: lastDate, 
                 lastServiceMileage: lastMileage, 
                 dueType, dueMonths, dueIntervalMileage,
+                targetDate, targetMileage,
                 attachments: currentPartAttachments
             });
         }
@@ -2043,9 +2165,15 @@ window.openEditPart = function(id) {
     if (fpLastDateInstance) fpLastDateInstance.setDate(part.lastServiceDate);
     document.getElementById('part-last-mileage').value = part.lastServiceMileage;
     
-    document.querySelector(`input[name="due-type"][value="${part.dueType}"]`).click();
-    document.getElementById('part-due-months').value = part.dueMonths;
-    document.getElementById('part-due-interval-mileage').value = part.dueIntervalMileage;
+    const targetRadio = document.querySelector(`input[name="due-type"][value="${part.dueType}"]`) || document.getElementById('radio-due-time');
+    if (targetRadio) {
+        targetRadio.checked = true;
+        updateDueInputsVisibility(targetRadio.value);
+    }
+    document.getElementById('part-due-months').value = (part.dueMonths !== undefined && part.dueMonths !== null) ? part.dueMonths : 6;
+    document.getElementById('part-due-interval-mileage').value = (part.dueIntervalMileage !== undefined && part.dueIntervalMileage !== null) ? part.dueIntervalMileage : 10000;
+    if (fpTargetDateInstance) fpTargetDateInstance.setDate(part.targetDate || '');
+    document.getElementById('part-target-mileage').value = (part.targetMileage !== undefined && part.targetMileage !== null && part.targetMileage !== 0) ? part.targetMileage : '';
 
     // Load attachments
     currentPartAttachments = (part.attachments && Array.isArray(part.attachments)) ? JSON.parse(JSON.stringify(part.attachments)) : [];
@@ -3318,6 +3446,13 @@ window.addEventListener('DOMContentLoaded', async () => {
             altFormat: "d/m/Y",
             locale: "th",
             defaultDate: new Date()
+        });
+
+        fpTargetDateInstance = flatpickr("#part-target-date", {
+            dateFormat: "Y-m-d",
+            altInput: true,
+            altFormat: "d/m/Y",
+            locale: "th"
         });
 
         fpHistDateInstance = flatpickr("#hist-date", {
