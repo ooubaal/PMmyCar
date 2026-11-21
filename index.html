@@ -648,7 +648,7 @@
 
     <!-- MODAL 2: LOG REPLACEMENT / ADD SERVICE HISTORY -->
     <div class="modal-overlay" id="modal-history">
-        <div class="modal-box glass-card">
+        <div class="modal-box glass-card" style="max-width: 650px;">
             <div class="modal-header">
                 <h3 id="modal-history-title">บันทึกการเปลี่ยนอะไหล่/บำรุงรักษา</h3>
                 <button class="btn-close-modal" id="btn-close-history-modal">&times;</button>
@@ -693,6 +693,69 @@
                 <div class="form-group">
                     <label for="hist-notes">บันทึกช่วยจำเพิ่มเติม / รายละเอียดใบเสร็จ</label>
                     <textarea id="hist-notes" rows="2" placeholder="เช่น เปลี่ยนกรองน้ำมันเครื่องยี่ห้อซากุระด้วย"></textarea>
+                </div>
+
+                <!-- Next Due Setting Section for Replaced Part -->
+                <div id="hist-due-settings-section" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color); margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+                        <div>
+                            <h4 class="section-title" style="margin-bottom: 2px; font-size: 0.95rem; display: flex; align-items: center; gap: 6px;">
+                                ⚙️ ตั้งค่ากำหนดการเตือนครั้งถัดไป (Next Due Setting)
+                            </h4>
+                            <span style="font-size: 0.78rem; color: var(--text-muted);">
+                                ยืนยันรอบเดิม หรือปรับเปลี่ยนสเปค/รอบเตือนหากใช้อะไหล่คนละรุ่น
+                            </span>
+                        </div>
+                        <button type="button" class="btn btn-xs btn-outline-cyan" id="btn-hist-keep-original" title="คืนค่ารอบเดิมของอะไหล่นี้">
+                            🔄 คืนค่ารอบเดิม
+                        </button>
+                    </div>
+
+                    <div class="due-type-selector">
+                        <label class="radio-label">
+                            <input type="radio" name="hist-due-type" value="time" id="radio-hist-due-time">
+                            <span>⏱️ ตามรอบเวลา<br><small style="color:var(--text-muted);">(ระบุจำนวนเดือน)</small></span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="hist-due-type" value="mileage" id="radio-hist-due-mileage">
+                            <span>🚗 ตามระยะทาง<br><small style="color:var(--text-muted);">(ระบุกิโลเมตร)</small></span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="hist-due-type" value="both" id="radio-hist-due-both">
+                            <span>⚡ ทั้งเวลา & ระยะทาง<br><small style="color:var(--text-muted);">(ถึงอย่างใดอย่างหนึ่งก่อน)</small></span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="hist-due-type" value="target_date" id="radio-hist-due-target-date">
+                            <span>📅 วันที่เป้าหมาย<br><small style="color:var(--text-muted);">(เช่น วันสิ้นสุดกรมธรรม์/ภาษี)</small></span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="hist-due-type" value="target_mileage" id="radio-hist-due-target-mileage">
+                            <span>🎯 เลขไมล์เป้าหมาย<br><small style="color:var(--text-muted);">(เช่น เตือนที่ไมล์เป้าหมาย)</small></span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="hist-due-type" value="target_both" id="radio-hist-due-target-both">
+                            <span>🎯📅 ทั้งไมล์ & วันที่<br><small style="color:var(--text-muted);">(ถึงอย่างใดอย่างหนึ่งก่อน)</small></span>
+                        </label>
+                    </div>
+
+                    <div class="form-row card-inside due-inputs-box">
+                        <div class="form-group flex-1" id="hist-due-time-group">
+                            <label for="hist-due-months">กำหนดเปลี่ยนครั้งถัดไป (ทุกๆ กี่เดือน)</label>
+                            <input type="number" id="hist-due-months" min="1" placeholder="เช่น 6, 12, 24">
+                        </div>
+                        <div class="form-group flex-1" id="hist-due-mileage-group" style="display: none;">
+                            <label for="hist-due-interval-mileage">กำหนดเปลี่ยนครั้งถัดไป (ทุกๆ กี่ กม.)</label>
+                            <input type="number" id="hist-due-interval-mileage" min="1" placeholder="เช่น 10000, 15000">
+                        </div>
+                        <div class="form-group flex-1" id="hist-due-target-date-group" style="display: none;">
+                            <label for="hist-target-date">วันที่เป้าหมายครั้งถัดไป *</label>
+                            <input type="text" id="hist-target-date" placeholder="เลือกวันที่เป้าหมาย (วัน/เดือน/ปี)">
+                        </div>
+                        <div class="form-group flex-1" id="hist-due-target-mileage-group" style="display: none;">
+                            <label for="hist-target-mileage">เลขไมล์เป้าหมายครั้งถัดไป (กม.) *</label>
+                            <input type="number" id="hist-target-mileage" min="0" placeholder="ระบุเลขไมล์เป้าหมาย เช่น 120000">
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Receipt / Multiple Document File Upload -->

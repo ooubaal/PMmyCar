@@ -43,6 +43,7 @@ let fpHistDateInstance = null;
 let fpAddMileageDateInstance = null;
 let fpInspectDateInstance = null;
 let fpInspectTargetDateInstance = null;
+let fpHistTargetDateInstance = null;
 let inspectCurrentPart = null;
 
 // Default Demo Data
@@ -2147,40 +2148,6 @@ function populatePartSelectDropdowns() {
     historyFilter.value = selectedHistoryFilter;
 }
 
-window.openEditHistory = function(id) {
-    const record = state.history.find(h => h.id === id);
-    if (!record) return;
-    
-    document.getElementById('form-history').reset();
-    document.getElementById('hist-id').value = record.id;
-    document.getElementById('hist-part-id').value = record.partId;
-    
-    const customGroup = document.getElementById('hist-custom-name-group');
-    const customInput = document.getElementById('hist-custom-name');
-    if (record.partId === 'general-repair') {
-        customGroup.style.display = 'block';
-        customInput.required = true;
-        customInput.value = record.partName;
-    } else {
-        customGroup.style.display = 'none';
-        customInput.required = false;
-        customInput.value = '';
-    }
-    
-    if (fpHistDateInstance) fpHistDateInstance.setDate(record.date);
-    document.getElementById('hist-mileage').value = record.mileage;
-    document.getElementById('hist-cost').value = record.cost || '';
-    document.getElementById('hist-mechanic').value = record.mechanic || '';
-    document.getElementById('hist-notes').value = record.notes || '';
-    
-    currentSelectedAttachments = JSON.parse(JSON.stringify(getRecordAttachments(record)));
-    renderAttachmentsPreview();
-    document.getElementById('compression-status').style.display = 'none';
-    
-    document.getElementById('modal-history-title').innerText = "แก้ไขประวัติการบำรุงรักษา";
-    openModal('modal-history');
-};
-
 function renderMileageHistory() {
     const list = document.getElementById('mileage-history-list');
     if (!list) return;
@@ -2850,6 +2817,64 @@ if (formInspectPart) {
     });
 }
 
+// Next Due Setting for Log Replacement / History Modal
+let histCurrentOriginalPart = null;
+
+function populateHistDueSettings(part) {
+    const section = document.getElementById('hist-due-settings-section');
+    if (!part || part.id === 'general-repair') {
+        if (section) section.style.display = 'none';
+        histCurrentOriginalPart = null;
+        return;
+    }
+
+    if (section) section.style.display = 'block';
+    histCurrentOriginalPart = part;
+
+    const dueType = part.dueType || 'both';
+    const radio = document.querySelector(`input[name="hist-due-type"][value="${dueType}"]`) || document.getElementById('radio-hist-due-both');
+    if (radio) {
+        radio.checked = true;
+        updateHistDueVisibility(radio.value);
+    }
+
+    const monthsInput = document.getElementById('hist-due-months');
+    const kmInput = document.getElementById('hist-due-interval-mileage');
+    const targetKmInput = document.getElementById('hist-target-mileage');
+
+    if (monthsInput) monthsInput.value = (part.dueMonths !== undefined && part.dueMonths !== null) ? part.dueMonths : 6;
+    if (kmInput) kmInput.value = (part.dueIntervalMileage !== undefined && part.dueIntervalMileage !== null) ? part.dueIntervalMileage : 10000;
+    if (fpHistTargetDateInstance) fpHistTargetDateInstance.setDate(part.targetDate || '');
+    if (targetKmInput) targetKmInput.value = (part.targetMileage !== undefined && part.targetMileage !== null && part.targetMileage !== 0) ? part.targetMileage : '';
+}
+
+function updateHistDueVisibility(val) {
+    const timeBox = document.getElementById('hist-due-time-group');
+    const mileageBox = document.getElementById('hist-due-mileage-group');
+    const targetDateBox = document.getElementById('hist-due-target-date-group');
+    const targetMileageBox = document.getElementById('hist-due-target-mileage-group');
+    
+    if (timeBox) timeBox.style.display = (val === 'time' || val === 'both') ? 'block' : 'none';
+    if (mileageBox) mileageBox.style.display = (val === 'mileage' || val === 'both') ? 'block' : 'none';
+    if (targetDateBox) targetDateBox.style.display = (val === 'target_date' || val === 'target_both') ? 'block' : 'none';
+    if (targetMileageBox) targetMileageBox.style.display = (val === 'target_mileage' || val === 'target_both') ? 'block' : 'none';
+}
+
+document.getElementsByName('hist-due-type').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+        updateHistDueVisibility(e.target.value);
+    });
+});
+
+const btnHistKeep = document.getElementById('btn-hist-keep-original');
+if (btnHistKeep) {
+    btnHistKeep.addEventListener('click', () => {
+        if (histCurrentOriginalPart) {
+            populateHistDueSettings(histCurrentOriginalPart);
+        }
+    });
+}
+
 // Log Replacement Modal Controls
 window.openLogReplacement = function(partId) {
     const part = state.parts.find(p => p.id === partId);
@@ -2874,6 +2899,11 @@ window.openLogReplacement = function(partId) {
     
     if (part) {
         document.getElementById('hist-part-id').value = part.id;
+        populateHistDueSettings(part);
+    } else {
+        const curSelectVal = document.getElementById('hist-part-id').value;
+        const curPart = state.parts.find(p => p.id === curSelectVal);
+        populateHistDueSettings(curPart || null);
     }
     
     document.getElementById('modal-history-title').innerText = "บันทึกการเปลี่ยนอะไหล่/บำรุงรักษา";
@@ -2898,11 +2928,14 @@ window.openEditHistory = function(id) {
         customGroup.style.display = 'block';
         customInput.required = true;
         customInput.value = record.partName;
+        populateHistDueSettings(null);
     } else {
         partSelect.value = record.partId;
         customGroup.style.display = 'none';
         customInput.required = false;
         customInput.value = '';
+        const part = state.parts.find(p => p.id === record.partId);
+        populateHistDueSettings(part || null);
     }
 
     if (fpHistDateInstance) fpHistDateInstance.setDate(record.date);
@@ -3073,6 +3106,16 @@ document.getElementById('form-history').addEventListener('submit', (e) => {
                 // Only update part's last service mileage if user actually specified a value > 0
                 if (mileage > 0) {
                     state.parts[partIdx].lastServiceMileage = mileage;
+                }
+
+                // Synchronize Next Due Setting if specified in modal
+                const dueRadio = document.querySelector('input[name="hist-due-type"]:checked');
+                if (dueRadio) {
+                    state.parts[partIdx].dueType = dueRadio.value;
+                    state.parts[partIdx].dueMonths = parseInt(document.getElementById('hist-due-months').value) || 0;
+                    state.parts[partIdx].dueIntervalMileage = parseInt(document.getElementById('hist-due-interval-mileage').value) || 0;
+                    state.parts[partIdx].targetDate = document.getElementById('hist-target-date').value || '';
+                    state.parts[partIdx].targetMileage = parseInt(document.getElementById('hist-target-mileage').value) || 0;
                 }
             }
         }
@@ -3847,7 +3890,7 @@ document.getElementById('tracker-filter-category').addEventListener('change', re
 document.getElementById('history-search').addEventListener('input', renderHistory);
 document.getElementById('history-filter-part').addEventListener('change', renderHistory);
 
-// Dropdown change listener for custom repair logging name
+// Dropdown change listener for custom repair logging name & Next Due Settings
 document.getElementById('hist-part-id').addEventListener('change', (e) => {
     const val = e.target.value;
     const customGroup = document.getElementById('hist-custom-name-group');
@@ -3856,10 +3899,13 @@ document.getElementById('hist-part-id').addEventListener('change', (e) => {
         customGroup.style.display = 'block';
         customInput.required = true;
         customInput.focus();
+        populateHistDueSettings(null);
     } else {
         customGroup.style.display = 'none';
         customInput.required = false;
         customInput.value = '';
+        const selectedPart = state.parts.find(p => p.id === val);
+        populateHistDueSettings(selectedPart || null);
     }
 });
 
@@ -4055,6 +4101,13 @@ window.addEventListener('DOMContentLoaded', async () => {
         });
 
         fpInspectTargetDateInstance = flatpickr("#inspect-target-date", {
+            dateFormat: "Y-m-d",
+            altInput: true,
+            altFormat: "d/m/Y",
+            locale: "th"
+        });
+
+        fpHistTargetDateInstance = flatpickr("#hist-target-date", {
             dateFormat: "Y-m-d",
             altInput: true,
             altFormat: "d/m/Y",
