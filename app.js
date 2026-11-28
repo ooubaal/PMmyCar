@@ -3276,7 +3276,7 @@ function syncAllPartsWithHistory() {
     });
 
     if (changed) {
-        saveStateToStorage();
+        saveStateToCache();
     }
 }
 
