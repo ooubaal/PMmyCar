@@ -513,6 +513,7 @@ function applyCloudData(cloudDb) {
     state.lastUpdated = cloudDb.lastUpdated || Date.now();
     
     applyDailyEstimatedMileage();
+    syncAllPartsWithHistory();
     saveStateToCache();
     renderAll();
     setSyncBadge("online", `ซิงก์สำเร็จ: ${new Date().toLocaleTimeString('th-TH')}`);
@@ -585,6 +586,7 @@ async function readFromLocalFile() {
         state.lastUpdated = localDb.lastUpdated || Date.now();
 
         applyDailyEstimatedMileage();
+        syncAllPartsWithHistory();
         setSyncBadge("local-file", `เชื่อมโยงไฟล์เครื่องสำเร็จ`);
         document.getElementById('local-file-path-display').innerText = `เชื่อมต่อกับ: ${state.localFileHandle.name}`;
         
@@ -2415,6 +2417,7 @@ document.getElementById('form-part').addEventListener('submit', (e) => {
             const idx = state.parts.findIndex(p => p.id === id);
             if (idx !== -1) {
                 state.parts[idx] = { 
+                    ...state.parts[idx],
                     id, name, category, description, 
                     lastServiceDate: lastDate, 
                     lastServiceMileage: lastMileage, 
@@ -2430,6 +2433,8 @@ document.getElementById('form-part').addEventListener('submit', (e) => {
                 id: newId, name, category, description, 
                 lastServiceDate: lastDate, 
                 lastServiceMileage: lastMileage, 
+                initialServiceDate: lastDate,
+                initialServiceMileage: lastMileage,
                 dueType, dueMonths, dueIntervalMileage,
                 targetDate, targetMileage,
                 attachments: currentPartAttachments
@@ -2776,6 +2781,23 @@ if (formInspectPart) {
         const targetDate = document.getElementById('inspect-target-date').value || '';
         const targetMileage = parseInt(document.getElementById('inspect-target-mileage').value) || 0;
 
+        const prevSnapshot = {
+            lastServiceDate: part.lastServiceDate,
+            lastServiceMileage: part.lastServiceMileage,
+            dueType: part.dueType,
+            dueMonths: part.dueMonths,
+            dueIntervalMileage: part.dueIntervalMileage,
+            targetDate: part.targetDate,
+            targetMileage: part.targetMileage
+        };
+        const appliedDueSettings = {
+            dueType,
+            dueMonths,
+            dueIntervalMileage,
+            targetDate,
+            targetMileage
+        };
+
         updateState(() => {
             // 1. Update part baseline and next due settings
             part.lastServiceDate = inspectDate;
@@ -2803,7 +2825,10 @@ if (formInspectPart) {
                 notes: logNote,
                 attachments: [],
                 receipt: "",
-                receiptName: ""
+                receiptName: "",
+                isInspection: true,
+                prevSnapshot,
+                appliedDueSettings
             });
             
             // 3. Update car overall mileage if inspect mileage is higher
@@ -3061,12 +3086,42 @@ document.getElementById('form-history').addEventListener('submit', (e) => {
         partName = part.name;
     }
 
+    // Extract Next Due Settings from modal if specified
+    let appliedDueSettings = null;
+    if (partId !== 'general-repair') {
+        const dueRadio = document.querySelector('input[name="hist-due-type"]:checked');
+        if (dueRadio) {
+            appliedDueSettings = {
+                dueType: dueRadio.value,
+                dueMonths: parseInt(document.getElementById('hist-due-months').value) || 0,
+                dueIntervalMileage: parseInt(document.getElementById('hist-due-interval-mileage').value) || 0,
+                targetDate: document.getElementById('hist-target-date').value || '',
+                targetMileage: parseInt(document.getElementById('hist-target-mileage').value) || 0
+            };
+        }
+    }
+
+    const part = (partId !== 'general-repair') ? state.parts.find(p => p.id === partId) : null;
+    let prevSnapshot = null;
+    if (part) {
+        prevSnapshot = {
+            lastServiceDate: part.lastServiceDate,
+            lastServiceMileage: part.lastServiceMileage,
+            dueType: part.dueType,
+            dueMonths: part.dueMonths,
+            dueIntervalMileage: part.dueIntervalMileage,
+            targetDate: part.targetDate,
+            targetMileage: part.targetMileage
+        };
+    }
+
     updateState(() => {
         if (id) {
             // Edit existing history record
             const idx = state.history.findIndex(h => h.id === id);
             if (idx !== -1) {
                 state.history[idx] = {
+                    ...state.history[idx],
                     id,
                     partId,
                     partName,
@@ -3077,7 +3132,8 @@ document.getElementById('form-history').addEventListener('submit', (e) => {
                     notes,
                     attachments: currentSelectedAttachments,
                     receipt: currentSelectedAttachments[0]?.data || "",
-                    receiptName: currentSelectedAttachments[0]?.name || ""
+                    receiptName: currentSelectedAttachments[0]?.name || "",
+                    appliedDueSettings: appliedDueSettings || state.history[idx].appliedDueSettings
                 };
             }
         } else {
@@ -3094,28 +3150,23 @@ document.getElementById('form-history').addEventListener('submit', (e) => {
                 notes,
                 attachments: currentSelectedAttachments,
                 receipt: currentSelectedAttachments[0]?.data || "",
-                receiptName: currentSelectedAttachments[0]?.name || ""
+                receiptName: currentSelectedAttachments[0]?.name || "",
+                prevSnapshot,
+                appliedDueSettings
             });
         }
 
-        // UPDATE THE PART'S LAST SERVICE RECORD METRICS IMMEDIATELY (if it's a tracked part)
+        // UPDATE THE PART'S LAST SERVICE RECORD METRICS & DUE SETTINGS (if tracked part)
         if (partId !== 'general-repair') {
-            const partIdx = state.parts.findIndex(p => p.id === partId);
-            if (partIdx !== -1) {
-                state.parts[partIdx].lastServiceDate = date;
-                // Only update part's last service mileage if user actually specified a value > 0
-                if (mileage > 0) {
-                    state.parts[partIdx].lastServiceMileage = mileage;
-                }
-
-                // Synchronize Next Due Setting if specified in modal
-                const dueRadio = document.querySelector('input[name="hist-due-type"]:checked');
-                if (dueRadio) {
-                    state.parts[partIdx].dueType = dueRadio.value;
-                    state.parts[partIdx].dueMonths = parseInt(document.getElementById('hist-due-months').value) || 0;
-                    state.parts[partIdx].dueIntervalMileage = parseInt(document.getElementById('hist-due-interval-mileage').value) || 0;
-                    state.parts[partIdx].targetDate = document.getElementById('hist-target-date').value || '';
-                    state.parts[partIdx].targetMileage = parseInt(document.getElementById('hist-target-mileage').value) || 0;
+            reconcilePartWithHistory(partId);
+            if (appliedDueSettings) {
+                const partToUpdate = state.parts.find(p => p.id === partId);
+                if (partToUpdate) {
+                    partToUpdate.dueType = appliedDueSettings.dueType;
+                    partToUpdate.dueMonths = appliedDueSettings.dueMonths;
+                    partToUpdate.dueIntervalMileage = appliedDueSettings.dueIntervalMileage;
+                    partToUpdate.targetDate = appliedDueSettings.targetDate;
+                    partToUpdate.targetMileage = appliedDueSettings.targetMileage;
                 }
             }
         }
@@ -3134,12 +3185,114 @@ document.getElementById('form-history').addEventListener('submit', (e) => {
     closeModal('modal-history');
 });
 
+// --- RECONCILE PART BASELINES & NEXT DUE SETTINGS WITH SERVICE HISTORY ---
+function reconcilePartWithHistory(partId, deletedRecord = null) {
+    if (!partId || partId === 'general-repair') return;
+    const part = state.parts.find(p => p.id === partId);
+    if (!part) return;
+
+    // Remaining history records for this part, sorted newest first
+    const partRecords = state.history.filter(h => h.partId === partId);
+    partRecords.sort((a, b) => new Date(b.date) - new Date(a.date) || (b.mileage || 0) - (a.mileage || 0));
+
+    if (partRecords.length > 0) {
+        const latest = partRecords[0];
+
+        part.lastServiceDate = latest.date;
+        if (latest.mileage !== undefined && latest.mileage !== null && latest.mileage > 0) {
+            part.lastServiceMileage = latest.mileage;
+        }
+
+        // Restore due settings if saved on the latest remaining record
+        if (latest.appliedDueSettings) {
+            if (latest.appliedDueSettings.dueType) part.dueType = latest.appliedDueSettings.dueType;
+            if (latest.appliedDueSettings.dueMonths !== undefined) part.dueMonths = latest.appliedDueSettings.dueMonths;
+            if (latest.appliedDueSettings.dueIntervalMileage !== undefined) part.dueIntervalMileage = latest.appliedDueSettings.dueIntervalMileage;
+            if (latest.appliedDueSettings.targetDate !== undefined) part.targetDate = latest.appliedDueSettings.targetDate;
+            if (latest.appliedDueSettings.targetMileage !== undefined) part.targetMileage = latest.appliedDueSettings.targetMileage;
+        } else if (deletedRecord && deletedRecord.prevSnapshot) {
+            // Or if the deleted record had a snapshot of what was before it, restore settings from snapshot
+            if (deletedRecord.prevSnapshot.dueType) part.dueType = deletedRecord.prevSnapshot.dueType;
+            if (deletedRecord.prevSnapshot.dueMonths !== undefined) part.dueMonths = deletedRecord.prevSnapshot.dueMonths;
+            if (deletedRecord.prevSnapshot.dueIntervalMileage !== undefined) part.dueIntervalMileage = deletedRecord.prevSnapshot.dueIntervalMileage;
+            if (deletedRecord.prevSnapshot.targetDate !== undefined) part.targetDate = deletedRecord.prevSnapshot.targetDate;
+            if (deletedRecord.prevSnapshot.targetMileage !== undefined) part.targetMileage = deletedRecord.prevSnapshot.targetMileage;
+        }
+    } else {
+        // No history records remain at all for this part
+        if (deletedRecord && deletedRecord.prevSnapshot) {
+            part.lastServiceDate = deletedRecord.prevSnapshot.lastServiceDate;
+            part.lastServiceMileage = deletedRecord.prevSnapshot.lastServiceMileage;
+            if (deletedRecord.prevSnapshot.dueType) part.dueType = deletedRecord.prevSnapshot.dueType;
+            if (deletedRecord.prevSnapshot.dueMonths !== undefined) part.dueMonths = deletedRecord.prevSnapshot.dueMonths;
+            if (deletedRecord.prevSnapshot.dueIntervalMileage !== undefined) part.dueIntervalMileage = deletedRecord.prevSnapshot.dueIntervalMileage;
+            if (deletedRecord.prevSnapshot.targetDate !== undefined) part.targetDate = deletedRecord.prevSnapshot.targetDate;
+            if (deletedRecord.prevSnapshot.targetMileage !== undefined) part.targetMileage = deletedRecord.prevSnapshot.targetMileage;
+        } else if (part.initialServiceDate) {
+            part.lastServiceDate = part.initialServiceDate;
+            part.lastServiceMileage = part.initialServiceMileage || 0;
+        }
+    }
+}
+
+function syncAllPartsWithHistory() {
+    if (!state.parts || !state.history) return;
+
+    let changed = false;
+    state.parts.forEach(part => {
+        // Ensure initial service baseline tracking
+        if (!part.initialServiceDate && part.lastServiceDate) {
+            part.initialServiceDate = part.lastServiceDate;
+            part.initialServiceMileage = part.lastServiceMileage || 0;
+            changed = true;
+        }
+
+        const partRecords = state.history.filter(h => h.partId === part.id);
+        if (partRecords.length > 0) {
+            partRecords.sort((a, b) => new Date(b.date) - new Date(a.date) || (b.mileage || 0) - (a.mileage || 0));
+            const latest = partRecords[0];
+
+            const hasExactRecord = partRecords.some(h => h.date === part.lastServiceDate);
+            // If part baseline does not match any history record or is newer than the latest history record (orphan from deleted record)
+            if (!hasExactRecord || part.lastServiceDate !== latest.date || (latest.mileage > 0 && part.lastServiceMileage !== latest.mileage)) {
+                console.log(`[Auto-Reconcile] Reconciling part "${part.name}" from ${part.lastServiceDate} (${part.lastServiceMileage} km) to latest history record ${latest.date} (${latest.mileage} km)`);
+                part.lastServiceDate = latest.date;
+                if (latest.mileage > 0) {
+                    part.lastServiceMileage = latest.mileage;
+                }
+                if (latest.appliedDueSettings) {
+                    if (latest.appliedDueSettings.dueType) part.dueType = latest.appliedDueSettings.dueType;
+                    if (latest.appliedDueSettings.dueMonths !== undefined) part.dueMonths = latest.appliedDueSettings.dueMonths;
+                    if (latest.appliedDueSettings.dueIntervalMileage !== undefined) part.dueIntervalMileage = latest.appliedDueSettings.dueIntervalMileage;
+                    if (latest.appliedDueSettings.targetDate !== undefined) part.targetDate = latest.appliedDueSettings.targetDate;
+                    if (latest.appliedDueSettings.targetMileage !== undefined) part.targetMileage = latest.appliedDueSettings.targetMileage;
+                } else if (part.name === 'กรองอากาศ' && part.dueIntervalMileage === 5000) {
+                    // Restore original 10,000 km interval for air filter if reverted from test 5,000 km
+                    part.dueIntervalMileage = 10000;
+                }
+                changed = true;
+            }
+        }
+    });
+
+    if (changed) {
+        saveStateToStorage();
+    }
+}
+
 // Delete history logs
 window.deleteHistoryRecord = function(id) {
     if (!confirm("คุณต้องการลบประวัติรายการนี้จริงหรือไม่? (ข้อมูลถาวรจะไม่ได้รับการกู้คืน)")) return;
     
     updateState(() => {
+        const targetRecord = state.history.find(h => h.id === id);
+        const targetPartId = targetRecord ? targetRecord.partId : null;
+
         state.history = state.history.filter(h => h.id !== id);
+
+        if (targetPartId && targetPartId !== 'general-repair') {
+            reconcilePartWithHistory(targetPartId, targetRecord);
+        }
     });
 };
 
@@ -3987,6 +4140,7 @@ document.getElementById('input-manual-import-file').addEventListener('change', (
                     state.history = parsed.history;
                     state.mileageLog = parsed.mileageLog || [];
                     state.lastUpdated = parsed.lastUpdated || Date.now();
+                    syncAllPartsWithHistory();
                 });
                 alert("นำเข้าฐานข้อมูลสำเร็จ!");
             }
@@ -4059,6 +4213,9 @@ window.addEventListener('DOMContentLoaded', async () => {
 
         // Calculate and apply daily auto-estimated mileage
         applyDailyEstimatedMileage();
+        
+        // Reconcile and synchronize part baselines with service history
+        syncAllPartsWithHistory();
         
         // Initialize Flatpickr calendar elements
         fpLastDateInstance = flatpickr("#part-last-date", {
